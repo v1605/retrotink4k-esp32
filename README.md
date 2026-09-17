@@ -382,19 +382,6 @@ It produces up to three files in `.pio/build/<env>/`:
 `custom_ota_host` in [platformio.ini](platformio.ini) (`tinkesp32.local`).
 Set `OTA_HOST=<host>` to target a different device.
 
-For reference, the flash layout on `esp32-s3-devkitc1-n16r8` (16MB,
-`default_16MB.csv`):
-
-| Offset | Partition | Size | Holds |
-|---|---|---|---|
-| `0x0` | — | — | bootloader |
-| `0x8000` | — | — | partition table |
-| `0x9000` | `nvs` | 24KB | saved WiFi, hostname, baud |
-| `0xe000` | `otadata` | 8KB | which app slot boots |
-| `0x10000` | `app0` | 6.25MB | firmware |
-| `0x650000` | `app1` | 6.25MB | firmware (OTA target) |
-| `0xc90000` | `spiffs` | 3.38MB | web UI (LittleFS) |
-| `0xff0000` | `coredump` | 64KB | crash dumps |
 
 **Why two USB images.** An image written from `0x0` pads straight across
 the `nvs` partition with `0xFF` and erases it. That's fine for a blank
