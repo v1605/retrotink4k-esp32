@@ -69,7 +69,7 @@ resets and failed transfers), a hot board, and at worst scorched traces,
 a damaged regulator, or a dead DevKitC. Leave it open and the OTG port
 carries data only, which is all this project needs from it.
 
-So give each device its own supply:
+One option: give each device its own supply:
 
 - **ESP32:** a 5V USB supply into its UART/`COM` port, which also keeps
   `Serial` logging available.
@@ -79,8 +79,12 @@ So give each device its own supply:
   (three USB-C ports: data in from the ESP32's OTG port, 5V in from the
   supply, combined out to the RT4K).
 - **Cable:** use a good USB-C cable between the splitter and the RT4K.
-  Thin or charge-only cables drop enough voltage at 2A to cause the same
-  brownouts the jumper does.
+
+Second Option: otg y cable
+
+- Allows a single power supply to power both devices (cable must support this feature)
+- The wiring is the same as the power splitter option.
+- If you use this option, ensure your Esp32 does not pass power between the two ports. Otherwise you can experience back power issues.
 
 
 ## Quick start: flashing from a release
