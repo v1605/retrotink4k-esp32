@@ -1,0 +1,98 @@
+// Custom Bootstrap build: only the partials this app's components/utilities
+// actually use (see bootstrap/scss/bootstrap.scss for the full import list
+// this is trimmed from). Excludes: images, tables, dropdown, button-group,
+// accordion, pagination, close, toasts, modal, tooltip, popover, carousel,
+// spinners, offcanvas, placeholders -- none of which anything kept here
+// references, verified against the installed package source.
+
+// Configuration
+@import "bootstrap/scss/functions";
+@import "bootstrap/scss/variables";
+@import "bootstrap/scss/variables-dark";
+@import "bootstrap/scss/maps";
+@import "bootstrap/scss/mixins";
+@import "bootstrap/scss/utilities";
+
+// Utilities this app needs that Bootstrap doesn't ship, generated through
+// its own utility API so the markup stays class-only:
+//   .min-h-0        flex children that must shrink and scroll internally
+//   .lh-0           strips the line box under a canvas/img
+//   .text-pre-wrap  terminal output that keeps newlines and still wraps
+//   .img-pixelated  nearest-neighbour scaling for the OSD canvas
+//   .w-max-content  popovers that size to their own text
+//   .mw-sm          and stop growing at a readable line length
+$utilities: map-merge(
+    $utilities,
+    (
+        "min-height": (
+            property: min-height,
+            class: min-h,
+            values: (0: 0),
+        ),
+        "image-rendering": (
+            property: image-rendering,
+            class: img,
+            values: (pixelated: pixelated),
+        ),
+        "width": map-merge(
+            map-get($utilities, "width"),
+            (
+                values: map-merge(
+                    map-get(map-get($utilities, "width"), "values"),
+                    (max-content: max-content),
+                ),
+            ),
+        ),
+        "max-width": map-merge(
+            map-get($utilities, "max-width"),
+            (
+                values: map-merge(
+                    map-get(map-get($utilities, "max-width"), "values"),
+                    (sm: 18rem),
+                ),
+            ),
+        ),
+        "line-height": map-merge(
+            map-get($utilities, "line-height"),
+            (
+                values: map-merge(
+                    map-get(map-get($utilities, "line-height"), "values"),
+                    (0: 0),
+                ),
+            ),
+        ),
+        "white-space": map-merge(
+            map-get($utilities, "white-space"),
+            (
+                values: map-merge(
+                    map-get(map-get($utilities, "white-space"), "values"),
+                    (pre-wrap: pre-wrap),
+                ),
+            ),
+        ),
+    )
+);
+
+// Layout & components
+@import "bootstrap/scss/root";
+@import "bootstrap/scss/reboot";
+@import "bootstrap/scss/type";
+@import "bootstrap/scss/containers";
+@import "bootstrap/scss/grid";
+@import "bootstrap/scss/forms";
+@import "bootstrap/scss/buttons";
+@import "bootstrap/scss/transitions";
+@import "bootstrap/scss/nav";
+@import "bootstrap/scss/navbar";
+@import "bootstrap/scss/card";
+@import "bootstrap/scss/breadcrumb";
+@import "bootstrap/scss/badge";
+@import "bootstrap/scss/alert";
+@import "bootstrap/scss/progress";
+@import "bootstrap/scss/list-group";
+
+// Helpers
+@import "bootstrap/scss/helpers";
+
+// Utilities
+@import "bootstrap/scss/utilities/api";
