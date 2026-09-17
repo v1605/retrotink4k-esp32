@@ -10,7 +10,7 @@ configuration — no PC or USB cable required once set up.
 - **Live terminal** — WebSocket-based console to the RT4K's serial
   interface.
 - **Profile management** — browse the RT4K's SD card `/profile` folder,
-  load/save/download/upload/delete `.rt4` profiles from the browser.
+  load/download/upload/delete `.rt4` profiles from the browser.
 - **WiFi setup** — connects to a saved network on boot, or falls back to
   hosting its own access point (`TinkEsp32`) for first-time setup. Includes
   network scanning (cached at boot and on demand) and a persistent,
@@ -82,14 +82,6 @@ So give each device its own supply:
   Thin or charge-only cables drop enough voltage at 2A to cause the same
   brownouts the jumper does.
 
-A powered USB OTG cable — the Y-cables with a separate power input — does
-the same job in one part, and works if you have a good one. Finding one
-properly rated for 2A is the hard bit: most are thin-gauge, their stated
-ratings are optimistic, and one that sags under load brings back the same
-brownouts. The splitter plus a cable you trust is easier to get right.
-
-A RT4K that stays off while the ESP32 runs fine means no power is reaching
-it on that path — check the supply, splitter and cable, not the jumper.
 
 ## Quick start: flashing from a release
 
@@ -99,8 +91,9 @@ No compiling needed for this — grab prebuilt files from the
 Each release has files named for the board they're for, e.g. for
 `esp32-s3-devkitc1-n16r8`:
 
-- `esp32-s3-devkitc1-n16r8-update.bin`
 - `esp32-s3-devkitc1-n16r8-blank-board-init.bin`
+- `esp32-s3-devkitc1-n16r8-update.bin`
+- `esp32-s3-devkitc1-n16r8-ota-update.bin`
 
 Connect the board via its **UART/flashing** USB port (see Hardware above
 for which port that is).
@@ -111,9 +104,9 @@ Espressif's official browser-based flashing tool, no install required
 don't support). Connect, add one row per file below at its offset, and
 flash:
 
-- **First time on a factory-blank board** — add both rows: `0x0` →
-  `esp32-s3-devkitc1-n16r8-blank-board-init.bin`, and `0xe000` →
-  `esp32-s3-devkitc1-n16r8-update.bin`.
+- **First time on a factory-blank board** — one row: `0x0` →
+  `esp32-s3-devkitc1-n16r8-blank-board-init.bin`. It's the complete image,
+  so don't use it to update a running board — it resets saved settings.
 - **Updating a board that's already running** — just one row: `0xe000` →
   `esp32-s3-devkitc1-n16r8-update.bin`. This doesn't touch its saved
   WiFi/hostname/baud settings.
@@ -127,9 +120,7 @@ pip install esptool
 
 ```sh
 # first time on a factory-blank board
-esptool --chip esp32s3 --port <PORT> write-flash \
-  0x0    esp32-s3-devkitc1-n16r8-blank-board-init.bin \
-  0xe000 esp32-s3-devkitc1-n16r8-update.bin
+esptool --chip esp32s3 --port <PORT> write-flash 0x0 esp32-s3-devkitc1-n16r8-blank-board-init.bin
 
 # updating a board that's already running
 esptool --chip esp32s3 --port <PORT> write-flash 0xe000 esp32-s3-devkitc1-n16r8-update.bin
@@ -147,6 +138,12 @@ partition table — if a future release changes it, or a release for a
 different board uses a different value, that'll be called out in the
 release notes alongside the files.
 
+**Later updates over WiFi.** Once the board is set up and on your network,
+there's no need for USB again: open its web UI, go to the **Update** page,
+choose `esp32-s3-devkitc1-n16r8-ota-update.bin`, and flash. The board
+installs the new firmware and web UI, keeps its saved settings, and
+restarts. (Or from a script, see `POST /api/ota/upload` under [API](#api).)
+
 ## API
 
 Everything the web UI does goes through a plain HTTP API on port 80, so
@@ -158,7 +155,8 @@ failure (HTTP 400 for a bad request, 503 for RT4K-side failures).
 POST bodies are `application/x-www-form-urlencoded` unless noted.
 
 **Status & serial**
-- `GET /api/status` → `{"ftdi_connected", "baud", "wifi_ssid", "wifi_ip"}`
+- `GET /api/status` → `{"ftdi_connected", "baud", "wifi_ssid", "wifi_ip",
+  "ota_supported"}`
 - `POST /api/serial` — `baud` (`2000000` or `115200`) — switches the
   ESP32↔FT232R link speed to match the RT4K firmware's expected baud.
 - `POST /api/command` — `command`, a raw line sent verbatim to the RT4K's
@@ -204,7 +202,7 @@ card and install them, without pulling the card or using the RT4K's own menu
 (Advanced Settings > OSD/Firmware > Check SD Card still works too)
 - `POST /api/firmware/upload?name=<name>` — raw binary body (up to 8MB), same
   `Content-Type: application/octet-stream` requirement and rejection as OTA
-  above, e.g.
+  below, e.g.
   `curl -H "Content-Type: application/octet-stream" --data-binary @rt4kup.bin "http://<host>/api/firmware/upload?name=rt4kup.bin"`.
   `name` must be a bare filename (no `/`) since the RT4K looks for its update
   files at the card's root, not a subfolder. A ~4.6MB `.rbf` takes about a
@@ -315,20 +313,17 @@ sections. To add one:
    ```
    Find the board id with `pio boards espressif32` (or search
    [PlatformIO's board list](https://docs.platformio.org/en/latest/boards/index.html#espressif-32)).
-3. If the board has PSRAM with the known ESP32 cache erratum, keep (or add)
-   `board_build.extra_flags = -mfix-esp32-psram-cache-issue` as in the
-   existing env.
-4. Build with `pio run -e my-new-board` / flash with
+3. Build with `pio run -e my-new-board` / flash with
    `pio run -e my-new-board -t upload`.
-5. Re-check wiring: whichever USB port maps to the chip's native USB
+4. Re-check wiring: whichever USB port maps to the chip's native USB
    peripheral (not the UART-bridge port) is the one that connects to the
    RT4K.
-6. `pio run -t release` works with any partition table that has a
+5. `pio run -t release` works with any partition table that has a
    `littlefs`/`spiffs` data partition. [scripts/release.py](scripts/release.py)
    takes every offset from PlatformIO, so it needs no per-board changes.
    The board's default table is used unless the env sets
    `board_build.partitions = <file>.csv`.
-7. To offer OTA updates (`/api/ota/upload` and the web UI's Update page)
+6. To offer OTA updates (`/api/ota/upload` and the web UI's Update page)
    on this board, add `build_flags = -D OTA_ENABLED=1` to its env. This
    needs a partition table with two "app" slots (`ota_0`/`ota_1`) plus an
    "otadata" partition. Most boards' default tables already have them.
@@ -352,33 +347,67 @@ This shows up as a normal task in the PlatformIO IDE too (VS Code's
 PlatformIO extension just lists whatever targets exist for an
 environment), not just on the CLI.
 
-It produces two files in `.pio/build/<env>/`:
+It produces up to three files in `.pio/build/<env>/`:
 
-- **`<env>-update.bin`** — your program + the web UI filesystem. **This is
-  the file to distribute.** Give this to anyone updating a board that's
-  already running — flash it alone and the board's saved WiFi/hostname/baud
-  survive, since this image never touches the `nvs` partition where those
-  live.
-- **`<env>-blank-board-init.bin`** — bootloader + partition table. Only
-  needed once, to bring up a factory-blank chip that has no bootloader yet
-  (nothing on it can run `update.bin`'s contents without this first). A
-  board that's already running this firmware never needs it again.
+| File | Contains | Written at | Use it for |
+|---|---|---|---|
+| `<env>-blank-board-init.bin` | everything: bootloader + partition table + `otadata` + firmware + web UI filesystem | `0x0` via esptool | A factory-blank board, once (resets saved settings) |
+| `<env>-update.bin` | `otadata` + firmware + web UI filesystem | `0xe000` via esptool | Updating over USB |
+| `<env>-ota-update.bin` | firmware + web UI filesystem | nowhere — uploaded over WiFi | Updating over WiFi (`OTA_ENABLED` builds only) |
 
-On a board whose env sets `OTA_ENABLED` (see [Adding a new
-board](#adding-a-new-board)), it also produces
-**`<env>-ota-update.bin`** — the same firmware and web UI, packaged for
-`POST /api/ota/upload` instead of `esptool`. See [API](#api) for that
-endpoint.
+- **`<env>-blank-board-init.bin`** — the complete flash image, from the
+  second-stage bootloader at `0x0` through the web UI filesystem: bootloader,
+  partition table, then the same contents as `update.bin`. A factory-blank
+  chip has no bootloader or partition table, so this one file is all it
+  needs. Its padding covers `nvs` with `0xFF` (erased flash, which the
+  firmware treats as no saved settings), so flashing it onto a board that's
+  already set up resets its WiFi/hostname/baud — use `update.bin` for that.
+- **`<env>-update.bin`** — **the file to distribute** for USB updates. It
+  starts at `otadata` (so the board boots the first app slot), then the
+  firmware in `app0`, then the web UI's LittleFS image in its filesystem
+  partition, with `0xFF` padding over the gaps between them — which is why
+  it's around 16MB. It stops before the `coredump` partition and starts
+  after `nvs`, so a board's saved WiFi/hostname/baud survive.
+- **`<env>-ota-update.bin`** — the same firmware and web UI, for
+  `POST /api/ota/upload` (the web UI's Update page) instead of `esptool`.
+  It isn't a flash image: it's a 13-byte header (`RT4O`, a version byte,
+  then the filesystem and firmware lengths as little-endian uint32s)
+  followed by the filesystem image and the firmware. The device writes the
+  filesystem first and the firmware second, into the app slot it isn't
+  running from, then reboots into it. Only built when the env sets
+  `OTA_ENABLED` (see [Adding a new board](#adding-a-new-board)); see
+  [API](#api) for the endpoint.
 
 `pio run -t ota` builds that package and uploads it to the device set by
 `custom_ota_host` in [platformio.ini](platformio.ini) (`tinkesp32.local`).
 Set `OTA_HOST=<host>` to target a different device.
 
-**Why two files instead of one.** A single image spanning the whole flash,
-written with one `write-flash 0x0`, would pad straight across the `nvs`
-partition with `0xFF` and erase it — silently resetting a board's saved
-settings to defaults on every reflash. Splitting the image around `nvs`
-means neither file's flash range ever overlaps it.
+For reference, the flash layout on `esp32-s3-devkitc1-n16r8` (16MB,
+`default_16MB.csv`):
+
+| Offset | Partition | Size | Holds |
+|---|---|---|---|
+| `0x0` | — | — | bootloader |
+| `0x8000` | — | — | partition table |
+| `0x9000` | `nvs` | 24KB | saved WiFi, hostname, baud |
+| `0xe000` | `otadata` | 8KB | which app slot boots |
+| `0x10000` | `app0` | 6.25MB | firmware |
+| `0x650000` | `app1` | 6.25MB | firmware (OTA target) |
+| `0xc90000` | `spiffs` | 3.38MB | web UI (LittleFS) |
+| `0xff0000` | `coredump` | 64KB | crash dumps |
+
+**Why two USB images.** An image written from `0x0` pads straight across
+the `nvs` partition with `0xFF` and erases it. That's fine for a blank
+board, which has no settings yet, but would reset a running board's saved
+settings on every update. So the blank-board image covers the whole flash,
+and the update image starts after `nvs` and never overlaps it.
+
+The other files in that folder aren't for distribution: `firmware.bin`,
+`bootloader.bin`, `partitions.bin` and `littlefs.bin` are the pieces the
+images above are merged from; `firmware.elf` and `firmware.map` keep debug
+symbols and the linker layout (the monitor's exception decoder uses the
+`.elf`); and `firmware.factory.bin` is PlatformIO's own merged image, which
+leaves out the web UI.
 
 Every offset comes from PlatformIO's own build of the env (bootloader,
 partition table, app, and the filesystem partition), and the images are
@@ -389,8 +418,7 @@ The script prints ready-to-copy `esptool` commands for both cases:
 ```sh
 # first flash of a blank board
 esptool --chip esp32s3 --port <PORT> write-flash \
-  0x0    esp32-s3-devkitc1-n16r8-blank-board-init.bin \
-  0xe000 esp32-s3-devkitc1-n16r8-update.bin
+  0x0    esp32-s3-devkitc1-n16r8-blank-board-init.bin
 
 # updating a board that's already running
 esptool --chip esp32s3 --port <PORT> write-flash \
