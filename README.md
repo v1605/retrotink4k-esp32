@@ -382,24 +382,6 @@ It produces up to three files in `.pio/build/<env>/`:
 `custom_ota_host` in [platformio.ini](platformio.ini) (`tinkesp32.local`).
 Set `OTA_HOST=<host>` to target a different device.
 
-
-**Why two USB images.** An image written from `0x0` pads straight across
-the `nvs` partition with `0xFF` and erases it. That's fine for a blank
-board, which has no settings yet, but would reset a running board's saved
-settings on every update. So the blank-board image covers the whole flash,
-and the update image starts after `nvs` and never overlaps it.
-
-The other files in that folder aren't for distribution: `firmware.bin`,
-`bootloader.bin`, `partitions.bin` and `littlefs.bin` are the pieces the
-images above are merged from; `firmware.elf` and `firmware.map` keep debug
-symbols and the linker layout (the monitor's exception decoder uses the
-`.elf`); and `firmware.factory.bin` is PlatformIO's own merged image, which
-leaves out the web UI.
-
-Every offset comes from PlatformIO's own build of the env (bootloader,
-partition table, app, and the filesystem partition), and the images are
-merged with `esptool merge-bin`.
-
 The script prints ready-to-copy `esptool` commands for both cases:
 
 ```sh
