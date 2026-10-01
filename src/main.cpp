@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 
+#include "net_watchdog.h"
 #include "rt4k/link.h"
 #include "serial_bridge.h"
 #include "web/web_server.h"
@@ -30,5 +31,6 @@ void setup()
 void loop()
 {
     WebServer::loop();
+    NetWatchdog::loop();
     delay(1000);
 }

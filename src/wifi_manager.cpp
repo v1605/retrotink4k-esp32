@@ -50,6 +50,7 @@ namespace
         );
 
         WiFi.mode(WIFI_STA);
+        WiFi.setSleep(false);
         WiFi.setHostname(currentHostname.c_str());
         WiFi.begin(ssid.c_str(), password.c_str());
 

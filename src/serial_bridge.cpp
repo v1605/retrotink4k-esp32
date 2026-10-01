@@ -5,7 +5,9 @@
 #include <atomic>
 #include <cinttypes>
 
+#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/ringbuf.h>
 #include <freertos/task.h>
 
 #include "config.h"
@@ -23,12 +25,16 @@ namespace
 
     EspUsbHost usb;
 
-    constexpr size_t RX_RING_BUFFER_SIZE = 16384;
+    constexpr size_t CDC_RX_BUFFER_SIZE = 1024;
     EspUsbHostCdcSerial cdcSerial(usb);
+
+    constexpr size_t RX_RING_BYTES = 128 * 1024;
+    constexpr size_t RX_RING_FALLBACK_BYTES = 16 * 1024;
+    RingbufHandle_t rxRing = nullptr;
+    std::atomic<uint32_t> droppedRxBytes{0};
     constexpr size_t SERIAL_WRITE_QUEUE_DEPTH = 4;
     constexpr size_t SERIAL_WRITE_BUFFER_BYTES = 2560;
 
-    // Backstop in case a wake-up is missed.
     constexpr TickType_t RX_IDLE_WAIT_TICKS = pdMS_TO_TICKS(10);
 
     // Written by EspUsbHost's client task and web tasks, read by rxForwardTask.
@@ -43,13 +49,6 @@ namespace
 
     std::atomic<SerialBridge::DataCallback> dataCallback{nullptr};
     std::atomic<SerialBridge::StatusCallback> statusCallback{nullptr};
-
-
-    void wakeRxTask()
-    {
-        if (rxTask)
-            xTaskNotifyGive(rxTask);
-    }
 
 
     void notifyStatus(bool connected, const String &message)
@@ -116,7 +115,7 @@ namespace
 
         if (configured)
         {
-            cdcSerial.setRxBufferSize(RX_RING_BUFFER_SIZE);
+            cdcSerial.setRxBufferSize(CDC_RX_BUFFER_SIZE);
             cdcSerial.begin(baud);
 
             if (!usb.serialWriteQueueBegin(SERIAL_WRITE_QUEUE_DEPTH, SERIAL_WRITE_BUFFER_BYTES, device.address))
@@ -124,7 +123,6 @@ namespace
 
             linkSetupPending = true;
             ftdiConnected = true;
-            wakeRxTask();
 
             Serial.println("FT232R configured");
             Serial.printf("Baud: %" PRIu32 "\n", baud);
@@ -187,37 +185,35 @@ namespace
 
     void rxForwardTask(void * /*arg*/)
     {
-        // Each cdcSerial.read() takes a critical section (there's no bulk
-        // read), so read in chunks.
         constexpr size_t FORWARD_CHUNK_CAPACITY = 512;
-        uint8_t chunk[FORWARD_CHUNK_CAPACITY];
+        constexpr uint32_t DROP_REPORT_INTERVAL_MS = 1000;
+        uint32_t reportedDrops = 0;
+        uint32_t lastReportMs = 0;
 
         for (;;)
         {
             if (linkSetupPending.exchange(false))
                 applyLinkSetup();
 
-            if (!ftdiConnected || cdcSerial.available() <= 0)
+            uint32_t drops = droppedRxBytes;
+            if (drops != reportedDrops && millis() - lastReportMs >= DROP_REPORT_INTERVAL_MS)
             {
-                // Woken by onSerialData once new bytes are buffered.
-                ulTaskNotifyTake(pdTRUE, RX_IDLE_WAIT_TICKS);
-                continue;
+                Serial.printf("WARNING: RX buffer full, %" PRIu32 " bytes dropped since boot\n", drops);
+                reportedDrops = drops;
+                lastReportMs = millis();
             }
 
             size_t length = 0;
-
-            while (length < FORWARD_CHUNK_CAPACITY)
-            {
-                int c = cdcSerial.read();
-                if (c < 0)
-                    break;
-
-                chunk[length++] = static_cast<uint8_t>(c);
-            }
+            auto *chunk = static_cast<uint8_t *>(
+                xRingbufferReceiveUpTo(rxRing, &length, RX_IDLE_WAIT_TICKS, FORWARD_CHUNK_CAPACITY));
+            if (!chunk)
+                continue;
 
             SerialBridge::DataCallback callback = dataCallback;
-            if (length > 0 && callback)
+            if (callback)
                 callback(chunk, length);
+
+            vRingbufferReturnItem(rxRing, chunk);
         }
     }
 }
@@ -230,6 +226,15 @@ void begin()
 {
     currentBaud = Config::loadSerialBaud();
     constexpr UBaseType_t RX_FORWARD_TASK_PRIORITY = 6;
+
+    rxRing = xRingbufferCreateWithCaps(RX_RING_BYTES, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
+    if (!rxRing)
+        rxRing = xRingbufferCreate(RX_RING_FALLBACK_BYTES, RINGBUF_TYPE_BYTEBUF);
+    if (!rxRing)
+    {
+        Serial.println("ERROR: no memory for the FT232R RX buffer");
+        return;
+    }
 
     // Core 1, away from WiFi and the USB host task.
     BaseType_t created = xTaskCreatePinnedToCore(
@@ -247,8 +252,14 @@ void begin()
 
     usb.onDeviceConnected(handleDeviceConnected);
     usb.onDeviceDisconnected(handleDeviceDisconnected);
-    // Called on EspUsbHost's client task after cdcSerial has the bytes.
-    usb.onSerialData([](const EspUsbHostSerialData &) { wakeRxTask(); });
+    usb.onSerialData([](const EspUsbHostSerialData &data)
+    {
+        if (data.address != ftdiAddress || data.length == 0)
+            return;
+
+        if (xRingbufferSend(rxRing, data.data, data.length, 0) != pdTRUE)
+            droppedRxBytes += data.length;
+    });
 
     EspUsbHostConfig usbConfig;
     usbConfig.taskPriority = 24;
@@ -269,11 +280,9 @@ bool isConnected()
 
 size_t pendingBytes()
 {
-    if (!ftdiConnected)
-        return 0;
-
-    int available = cdcSerial.available();
-    return available > 0 ? static_cast<size_t>(available) : 0;
+    UBaseType_t waiting = 0;
+    vRingbufferGetInfo(rxRing, nullptr, nullptr, nullptr, nullptr, &waiting);
+    return waiting;
 }
 
 
@@ -294,7 +303,6 @@ void setBaud(uint32_t baud)
         cdcSerial.setBaudRate(baud);
         hardwareFlowControl = false;
         linkSetupPending = true;
-        wakeRxTask();
     }
 }
 
