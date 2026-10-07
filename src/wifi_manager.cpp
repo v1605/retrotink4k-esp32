@@ -2,6 +2,7 @@
 
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <mdns.h>
 
 #include <algorithm>
 
@@ -49,9 +50,9 @@ namespace
             ssid.c_str()
         );
 
+        WiFi.setHostname(currentHostname.c_str());
         WiFi.mode(WIFI_STA);
         WiFi.setSleep(false);
-        WiFi.setHostname(currentHostname.c_str());
         WiFi.begin(ssid.c_str(), password.c_str());
 
         uint32_t start = millis();
@@ -71,10 +72,17 @@ namespace
     }
 
 
+    void refreshMdns()
+    {
+        if (esp_netif_t *netif = WiFi.STA.netif())
+            mdns_netif_action(netif, static_cast<mdns_event_actions_t>(MDNS_EVENT_ENABLE_IP4 | MDNS_EVENT_ANNOUNCE_IP4));
+    }
+
+
     void startAccessPoint()
     {
-        WiFi.mode(WIFI_AP);
         WiFi.setHostname(currentHostname.c_str());
+        WiFi.mode(WIFI_AP);
         WiFi.softAP(AP_SSID, AP_PASSWORD);
 
         currentMode = WifiManager::Mode::ACCESS_POINT;
@@ -94,6 +102,8 @@ namespace WifiManager
 void begin()
 {
     currentHostname = Config::loadHostname();
+
+    WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) { refreshMdns(); }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
 
     WifiCredentials creds =
         Config::loadWifiCredentials();
