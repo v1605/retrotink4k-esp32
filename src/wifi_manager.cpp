@@ -8,6 +8,7 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <freertos/timers.h>
 
 #include "config.h"
 
@@ -104,6 +105,7 @@ void begin()
     currentHostname = Config::loadHostname();
 
     WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) { refreshMdns(); }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+    xTimerStart(xTimerCreate("mdns_refresh", pdMS_TO_TICKS(120000), pdTRUE, nullptr, [](TimerHandle_t) { refreshMdns(); }), 0);
 
     WifiCredentials creds =
         Config::loadWifiCredentials();
