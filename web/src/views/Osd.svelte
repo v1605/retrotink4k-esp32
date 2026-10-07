@@ -87,12 +87,6 @@
                             </div>
                         </div>
 
-                        {#if osdStore.plane === 2 && osdStore.available}
-                            <p class="card-text text-body-secondary mb-2">
-                                Menu {osdStore.on ? "on" : "off"}{osdStore.osk ? ", on-screen keyboard visible" : ""}
-                            </p>
-                        {/if}
-
                         <div
                             class="bg-black p-2 rounded d-flex justify-content-center align-items-center flex-grow-1 min-h-0 lh-0 overflow-hidden"
                         >

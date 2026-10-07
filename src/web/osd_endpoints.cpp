@@ -132,8 +132,6 @@ namespace
 
         if (osdPlane.available)
         {
-            doc["on"] = osdPlane.on;
-            doc["osk"] = osdPlane.osk;
             doc["rows"] = osdPlane.rows;
             doc["width"] = osdPlane.width;
             doc["stride"] = osdPlane.stride;

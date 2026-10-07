@@ -27,8 +27,6 @@ class OsdStore {
     available = $state(false);
     usesBanner = $state(false);
     message = $state("");
-    on = $state(0);
-    osk = $state(0);
 
     private font: Uint8Array | null = null;
     private canvas: HTMLCanvasElement | null = null;
@@ -144,9 +142,6 @@ class OsdStore {
             this.usesBanner = false;
             return;
         }
-
-        this.on = info.on ?? 0;
-        this.osk = info.osk ?? 0;
 
         const bitmap = createOsdBitmap(
             base64ToBytes(info.text),

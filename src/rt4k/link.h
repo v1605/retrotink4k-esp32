@@ -39,8 +39,6 @@ namespace Rt4kLink
     struct OsdPlane
     {
         bool available = false; // false if the RT4K currently has nothing to show
-        uint32_t on = 0;        // plane 2 only
-        uint32_t osk = 0;       // plane 2 only -- on-screen keyboard visible
         uint32_t rows = 0;
         uint32_t width = 0;
         uint32_t stride = 0;

@@ -6,8 +6,6 @@ import { onOsdEvent, osdRequest } from "../osdSocket";
 export interface OsdPlaneInfo {
     ok: boolean;
     available: boolean;
-    on?: number;
-    osk?: number;
     rows?: number;
     width?: number;
     stride?: number;

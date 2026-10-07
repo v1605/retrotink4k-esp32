@@ -101,12 +101,6 @@ Result downloadOsdPlane(int plane, OsdPlane &out)
         !parseNonce(ready, nonce))
         return failure("Malformed ready reply: " + ready);
 
-    if (plane == 2)
-    {
-        parseUnsigned(fieldValue(ready, "on"), out.on);
-        parseUnsigned(fieldValue(ready, "osk"), out.osk);
-    }
-
     std::vector<uint8_t> raw;
     raw.reserve(OSD_PLANE_BYTES);
 

@@ -16,9 +16,11 @@ const GLYPH_WIDTH = 8;
 const GLYPH_HEIGHT = 16;
 const GLYPH_COUNT = 256;
 
-// The banner is drawn on plane 1 only, and only where its area is empty.
+// The banner is drawn on plane 1 only, above the menu: its area must be empty
+// and something must be shown below it.
 function usesBanner(
     text: Uint8Array,
+    color: Uint8Array,
     rows: number,
     width: number,
     stride: number,
@@ -37,7 +39,15 @@ function usesBanner(
         }
     }
 
-    return true;
+    for (let row = bannerRows; row < rows; row++) {
+        for (let column = 0; column < width; column++) {
+            const index = row * stride + column;
+            if (text[index] > 0x20 || color[index] & 0xc0)
+                return true;
+        }
+    }
+
+    return false;
 }
 
 export interface OsdBitmap {
@@ -58,7 +68,7 @@ export function createOsdBitmap(
     banner: BannerBitmap | null,
 ): OsdBitmap {
     // Drawn uncropped, so a small box keeps the full plane's scale.
-    const withBanner = usesBanner(text, rows, width, stride, plane, banner);
+    const withBanner = usesBanner(text, color, rows, width, stride, plane, banner);
     const pixelWidth = width * GLYPH_WIDTH;
     const pixelHeight = rows * GLYPH_HEIGHT;
     const pixels = new Uint8ClampedArray(pixelWidth * pixelHeight * 4);
