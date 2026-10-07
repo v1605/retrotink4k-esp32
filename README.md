@@ -1,5 +1,7 @@
 # RT4K Serial Bridge (ESP32-S3)
 
+![OSD](screenshots/osd.png)
+
 Bridges a RetroTINK-4K's USB serial console over WiFi. The ESP32-S3 acts as
 a USB host for the RT4K's onboard FT232R chip, and exposes a web UI (served
 from the ESP32 itself) for a live terminal, profile management, and device
