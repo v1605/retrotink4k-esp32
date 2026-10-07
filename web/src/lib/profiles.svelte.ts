@@ -33,6 +33,7 @@ function hashForPath(path: string): string {
 
 class ProfilesStore {
     currentProfile = $state("--");
+    currentProfilePath = $state<string | null>(null);
     currentPath = $state(pathFromHash());
     entries = $state<ProfileEntry[]>([]);
     message = $state("");
@@ -74,13 +75,17 @@ class ProfilesStore {
     refreshCurrentProfile(): void {
         getCurrentProfile()
             .then((info) => {
+                this.currentProfilePath = info.ok && info.loaded && info.path ? info.path : null;
                 if (!info.ok) {
                     this.currentProfile = "Unknown (" + info.error + ")";
                     return;
                 }
                 this.currentProfile = info.loaded ? (info.path ?? "") : "None loaded";
             })
-            .catch(() => (this.currentProfile = "Unknown"));
+            .catch(() => {
+                this.currentProfilePath = null;
+                this.currentProfile = "Unknown";
+            });
     }
 
     refresh(): void {
@@ -122,6 +127,14 @@ class ProfilesStore {
             return;
 
         this.navigateTo(this.currentPath + "/" + name);
+    }
+
+    openCurrentProfileFolder(): void {
+        if (this.navigating || !this.currentProfilePath)
+            return;
+
+        const slash = this.currentProfilePath.lastIndexOf("/");
+        this.navigateTo(slash >= 0 ? ROOT + "/" + this.currentProfilePath.slice(0, slash) : ROOT);
     }
 
     goToBreadcrumb(path: string): void {

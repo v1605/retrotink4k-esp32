@@ -34,7 +34,17 @@
                 <div class="card bg-body-tertiary mb-3">
                     <div class="card-body">
                         <h5 class="card-title">Currently loaded profile</h5>
-                        <p class="card-text mb-0">{profilesStore.currentProfile}</p>
+                        <p class="card-text mb-0">
+                            {#if profilesStore.currentProfilePath}
+                                <button
+                                    type="button"
+                                    class="btn btn-link p-0 align-baseline text-decoration-none text-break text-start"
+                                    onclick={() => profilesStore.openCurrentProfileFolder()}
+                                >{profilesStore.currentProfile}</button>
+                            {:else}
+                                {profilesStore.currentProfile}
+                            {/if}
+                        </p>
                     </div>
                 </div>
 

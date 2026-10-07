@@ -301,6 +301,30 @@ Run it after a fresh flash and whenever `web/` changes; firmware and web UI
 flash independently (`upload` vs. `uploadfs`). `buildfs`, `uploadfs`,
 `release` and `ota` all run `npm run build` (svelte-check, then Vite) first.
 
+### Developing the web UI
+
+To work on the UI without reflashing, run Vite's dev server. It serves the
+UI from your PC with live reload and forwards API and WebSocket requests to
+a running bridge:
+
+```sh
+cd web
+npm run dev
+```
+
+Open the `http://localhost:5173` address it prints. Requests to `/api` and
+`/ws` (including `/ws/osd` and `/ws/firmware`) go to `http://tinkesp32.local`
+by default. To use a different address, set `BRIDGE_URL`:
+
+```sh
+BRIDGE_URL=http://192.168.1.50 npm run dev
+```
+
+or put `BRIDGE_URL=http://192.168.1.50` in `web/.env.local`. Only the UI
+reloads this way: firmware changes still need a flash, and once you're
+done, `pio run -t uploadfs` (or an OTA update) puts the finished UI on the
+board.
+
 ## Adding a new board
 
 Board configs live in [platformio.ini](platformio.ini) as `[env:<name>]`
