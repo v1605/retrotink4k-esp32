@@ -96,7 +96,12 @@
                         <div
                             class="bg-black p-2 rounded d-flex justify-content-center align-items-center flex-grow-1 min-h-0 lh-0 overflow-hidden"
                         >
-                            <canvas bind:this={canvasEl} class="h-100 w-auto img-pixelated"></canvas>
+                            <div class="position-relative flex-grow-1 align-self-stretch">
+                                <canvas
+                                    bind:this={canvasEl}
+                                    class="position-absolute top-0 start-0 w-100 h-100 object-fit-contain img-pixelated"
+                                ></canvas>
+                            </div>
                         </div>
 
                         {#if !osdStore.available && !osdStore.loading}

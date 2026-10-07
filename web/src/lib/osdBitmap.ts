@@ -16,74 +16,28 @@ const GLYPH_WIDTH = 8;
 const GLYPH_HEIGHT = 16;
 const GLYPH_COUNT = 256;
 
-// Crops to the populated region. The banner is drawn on plane 1 only, and
-// only where its area is empty.
-function getVisibleRows(
+// The banner is drawn on plane 1 only, and only where its area is empty.
+function usesBanner(
     text: Uint8Array,
-    color: Uint8Array,
     rows: number,
     width: number,
     stride: number,
     plane: 1 | 2,
     banner: BannerBitmap | null,
-): { rows: number; usesBanner: boolean } {
-    let lastPopulatedRow = 0;
+): boolean {
+    if (plane !== 1 || !banner)
+        return false;
 
-    for (let row = 0; row < rows; row++) {
+    const bannerRows = Math.min(rows, Math.ceil(banner.height / GLYPH_HEIGHT));
+
+    for (let row = 0; row < Math.max(1, bannerRows - 1); row++) {
         for (let column = 0; column < width; column++) {
-            const index = row * stride + column;
-            if (text[index] > 0x20 || color[index] & 0xc0) {
-                lastPopulatedRow = row;
-                break;
-            }
+            if (text[row * stride + column] > 0x20)
+                return false;
         }
     }
 
-    const bannerRows = banner ? Math.min(rows, Math.ceil(banner.height / GLYPH_HEIGHT)) : 0;
-    let bannerAreaIsBlank = true;
-
-    for (let row = 0; row < Math.max(1, bannerRows - 1) && bannerAreaIsBlank; row++) {
-        for (let column = 0; column < width; column++) {
-            if (text[row * stride + column] > 0x20) {
-                bannerAreaIsBlank = false;
-                break;
-            }
-        }
-    }
-
-    const usesBanner = plane === 1 && Boolean(banner) && bannerAreaIsBlank;
-    let visibleRows = Math.min(rows, lastPopulatedRow + 2);
-
-    if (usesBanner)
-        visibleRows = Math.max(visibleRows, bannerRows);
-
-    return { rows: visibleRows, usesBanner };
-}
-
-function getVisibleColumns(
-    text: Uint8Array,
-    color: Uint8Array,
-    width: number,
-    stride: number,
-    rows: number,
-): { first: number; last: number } {
-    let firstPopulatedColumn = width;
-    let lastPopulatedColumn = -1;
-
-    for (let row = 0; row < rows; row++) {
-        for (let column = 0; column < width; column++) {
-            const index = row * stride + column;
-            if (text[index] > 0x20 || color[index] & 0xc0) {
-                firstPopulatedColumn = Math.min(firstPopulatedColumn, column);
-                lastPopulatedColumn = Math.max(lastPopulatedColumn, column);
-            }
-        }
-    }
-
-    if (lastPopulatedColumn < firstPopulatedColumn)
-        return { first: 0, last: width - 1 };
-
-    return { first: firstPopulatedColumn, last: lastPopulatedColumn };
+    return true;
 }
 
 export interface OsdBitmap {
@@ -102,21 +56,15 @@ export function createOsdBitmap(
     stride: number,
     plane: 1 | 2,
     banner: BannerBitmap | null,
-    trimHorizontal: boolean,
 ): OsdBitmap {
-    const visible = getVisibleRows(text, color, rows, width, stride, plane, banner);
-    const visibleColumns = trimHorizontal && !visible.usesBanner
-        ? getVisibleColumns(text, color, width, stride, visible.rows)
-        : { first: 0, last: width - 1 };
-
-    const columnCount = visibleColumns.last - visibleColumns.first + 1;
-    const pixelWidth = columnCount * GLYPH_WIDTH;
-    const pixelHeight = visible.rows * GLYPH_HEIGHT;
+    // Drawn uncropped, so a small box keeps the full plane's scale.
+    const withBanner = usesBanner(text, rows, width, stride, plane, banner);
+    const pixelWidth = width * GLYPH_WIDTH;
+    const pixelHeight = rows * GLYPH_HEIGHT;
     const pixels = new Uint8ClampedArray(pixelWidth * pixelHeight * 4);
 
-    for (let row = 0; row < visible.rows; row++) {
-        for (let outputColumn = 0; outputColumn < columnCount; outputColumn++) {
-            const column = visibleColumns.first + outputColumn;
+    for (let row = 0; row < rows; row++) {
+        for (let column = 0; column < width; column++) {
             const cellIndex = row * stride + column;
             const glyph = text[cellIndex] ?? 0;
             const attr = color[cellIndex] ?? 0;
@@ -134,7 +82,7 @@ export function createOsdBitmap(
                 const glyphBits = font[glyphRow * GLYPH_COUNT + glyph] ?? 0;
 
                 for (let glyphCol = 0; glyphCol < GLYPH_WIDTH; glyphCol++) {
-                    const x = outputColumn * GLYPH_WIDTH + glyphCol;
+                    const x = column * GLYPH_WIDTH + glyphCol;
                     const y = row * GLYPH_HEIGHT + glyphRow;
                     const pixelIndex = (y * pixelWidth + x) * 4;
 
@@ -144,7 +92,7 @@ export function createOsdBitmap(
                         pixels[pixelIndex + 2] = foreground[2];
                     } else if (
                         backgroundMode === 0
-                        && visible.usesBanner
+                        && withBanner
                         && banner
                         && x < banner.width
                         && y < banner.height
@@ -166,7 +114,7 @@ export function createOsdBitmap(
         }
     }
 
-    return { width: pixelWidth, height: pixelHeight, pixels, usesBanner: visible.usesBanner };
+    return { width: pixelWidth, height: pixelHeight, pixels, usesBanner: withBanner };
 }
 
 export function drawOsdBitmap(canvas: HTMLCanvasElement, bitmap: OsdBitmap): void {

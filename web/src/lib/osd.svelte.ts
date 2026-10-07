@@ -157,7 +157,6 @@ class OsdStore {
             info.stride || info.width,
             this.plane,
             banner,
-            true,
         );
 
         this.usesBanner = bitmap.usesBanner;
