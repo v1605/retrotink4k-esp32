@@ -32,5 +32,13 @@ void loop()
 {
     WebServer::loop();
     NetWatchdog::loop();
+
+    static uint32_t lastMdnsRefresh = 0;
+    if (millis() - lastMdnsRefresh >= 60000)
+    {
+        lastMdnsRefresh = millis();
+        WifiManager::refreshMdns();
+    }
+
     delay(1000);
 }

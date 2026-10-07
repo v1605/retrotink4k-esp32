@@ -8,7 +8,6 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
-#include <freertos/timers.h>
 
 #include "config.h"
 
@@ -73,13 +72,6 @@ namespace
     }
 
 
-    void refreshMdns()
-    {
-        if (esp_netif_t *netif = WiFi.STA.netif())
-            mdns_netif_action(netif, static_cast<mdns_event_actions_t>(MDNS_EVENT_ENABLE_IP4 | MDNS_EVENT_ANNOUNCE_IP4));
-    }
-
-
     void startAccessPoint()
     {
         WiFi.setHostname(currentHostname.c_str());
@@ -100,12 +92,18 @@ namespace
 namespace WifiManager
 {
 
+void refreshMdns()
+{
+    if (esp_netif_t *netif = WiFi.STA.netif())
+        mdns_netif_action(netif, static_cast<mdns_event_actions_t>(MDNS_EVENT_ENABLE_IP4 | MDNS_EVENT_ANNOUNCE_IP4));
+}
+
+
 void begin()
 {
     currentHostname = Config::loadHostname();
 
     WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) { refreshMdns(); }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
-    xTimerStart(xTimerCreate("mdns_refresh", pdMS_TO_TICKS(120000), pdTRUE, nullptr, [](TimerHandle_t) { refreshMdns(); }), 0);
 
     WifiCredentials creds =
         Config::loadWifiCredentials();

@@ -29,6 +29,7 @@ namespace WifiManager
     };
 
     void begin();
+    void refreshMdns();
 
     Mode getMode();
     String getModeName(); // "station" or "access point"
