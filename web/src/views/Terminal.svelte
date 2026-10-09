@@ -1,10 +1,14 @@
 <script lang="ts">
-    import { onMount, onDestroy } from "svelte";
+    import { onMount, onDestroy, tick } from "svelte";
     import { terminalStore } from "../lib/terminal.svelte";
 
     let terminalEl: HTMLPreElement;
     let commandValue = $state("");
     let commandEl: HTMLInputElement;
+
+    // Steps back from the newest entry; -1 is the line being typed.
+    let historyIndex = -1;
+    let draft = "";
 
     onMount(() => {
         terminalStore.startPolling();
@@ -28,7 +32,33 @@
 
         terminalStore.send(text);
         commandValue = "";
+        historyIndex = -1;
         commandEl.focus();
+    }
+
+    async function onKeyDown(event: KeyboardEvent): Promise<void> {
+        const history = terminalStore.history;
+        let next = historyIndex;
+
+        if (event.key === "ArrowUp")
+            next = Math.min(historyIndex + 1, history.length - 1);
+        else if (event.key === "ArrowDown")
+            next = Math.max(historyIndex - 1, -1);
+        else
+            return;
+
+        event.preventDefault();
+        if (next === historyIndex)
+            return;
+
+        if (historyIndex === -1)
+            draft = commandValue;
+
+        historyIndex = next;
+        commandValue = next === -1 ? draft : history[history.length - 1 - next];
+
+        await tick();
+        commandEl.setSelectionRange(commandValue.length, commandValue.length);
     }
 </script>
 
@@ -67,6 +97,7 @@
             autocomplete="off"
             spellcheck="false"
             bind:value={commandValue}
+            onkeydown={onKeyDown}
         >
         <button type="submit" class="btn btn-primary">SEND</button>
         <button type="button" class="btn btn-secondary" onclick={() => terminalStore.clear()}>CLEAR</button>

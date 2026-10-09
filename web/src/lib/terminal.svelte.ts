@@ -2,11 +2,25 @@ import { getStatus } from "./api";
 
 const textDecoder = new TextDecoder();
 
+const HISTORY_KEY = "terminalHistory";
+const HISTORY_LIMIT = 20;
+
+function loadHistory(): string[] {
+    try {
+        const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+        return Array.isArray(saved) ? saved.filter((item) => typeof item === "string").slice(-HISTORY_LIMIT) : [];
+    } catch {
+        return [];
+    }
+}
+
 class TerminalStore {
     logText = $state("");
     wsConnected = $state(false);
     ftdiConnected = $state(false);
     baud = $state(0);
+
+    readonly history: string[] = loadHistory();
 
     private socket: WebSocket | null = null;
     private statusTimer: ReturnType<typeof setInterval> | null = null;
@@ -49,6 +63,8 @@ class TerminalStore {
     }
 
     send(text: string): void {
+        this.remember(text);
+
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
             this.print("\r\n[WebSocket not connected]\r\n");
             return;
@@ -56,6 +72,17 @@ class TerminalStore {
 
         this.socket.send(text + "\n");
         this.print("> " + text + "\r\n");
+    }
+
+    private remember(text: string): void {
+        if (this.history[this.history.length - 1] !== text)
+            this.history.push(text);
+        if (this.history.length > HISTORY_LIMIT)
+            this.history.splice(0, this.history.length - HISTORY_LIMIT);
+
+        try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(this.history));
+        } catch {}
     }
 
     refreshStatus(): void {
