@@ -26,6 +26,12 @@ namespace SerialBridge
     // Sends bytes exactly as given, no framing added.
     bool sendRaw(const uint8_t *data, size_t length);
 
+    // Not from the USB client task.
+    bool flush(uint32_t timeoutMs);
+
+    // RX bytes lost to a full buffer since boot.
+    uint32_t droppedRxBytes();
+
     // Only one subscriber is supported; the web server is the sole consumer.
     void onData(DataCallback callback);
     void onStatus(StatusCallback callback);

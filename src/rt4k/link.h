@@ -108,4 +108,18 @@ namespace Rt4kLink
     // Banner info plus its bytes in one locked operation. Skips the download
     // (unchanged = true) when the RT4K reports knownPath.
     Result downloadBanner(BannerInfo &info, std::vector<uint8_t> &out, const String &knownPath, bool &unchanged);
+
+    // Retro-Bridge: release from the acquiring task.
+    bool acquireExternal(uint32_t timeoutMs, const char *ownerLabel);
+    void releaseExternal();
+
+    // exclusive: internal operations give up after a short wait.
+    void setExternalOwner(const char *ownerLabel, bool exclusive);
+
+    // "" when free, "internal:<op>", or the external owner's label.
+    String currentOwner();
+
+    // An internal operation is waiting for the link; Retro-Bridge yields it at
+    // its next gap.
+    bool internalWaiting();
 }

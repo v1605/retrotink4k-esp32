@@ -21,7 +21,7 @@ namespace
 
 Result downloadOsdFont(OsdFont &out)
 {
-    Session session;
+    Session session("font");
     if (!session)
         return failure(session.error());
 
@@ -61,7 +61,7 @@ Result downloadOsdPlane(int plane, OsdPlane &out)
     if (plane != 1 && plane != 2)
         return failure("OSD plane must be 1 or 2");
 
-    Session session;
+    Session session("osd");
     if (!session)
         return failure(session.error());
 

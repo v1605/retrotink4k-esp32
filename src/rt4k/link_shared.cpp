@@ -11,10 +11,50 @@
 using namespace Rt4kProtocol;
 
 
+namespace
+{
+    // Internal wait while a Retro-Bridge lease holds the link.
+    constexpr uint32_t EXCLUSIVE_OWNER_WAIT_MS = 2000;
+    constexpr uint32_t MUTEX_POLL_MS = 100;
+    constexpr size_t MAX_OWNER_LABEL = 48;
+
+    std::atomic<const char *> internalOp{nullptr};
+    std::atomic<int> internalWaiters{0};
+    std::atomic<bool> externalHeld{false};
+    std::atomic<bool> externalExclusive{false};
+    char externalLabel[MAX_OWNER_LABEL] = {};
+    portMUX_TYPE labelLock = portMUX_INITIALIZER_UNLOCKED;
+
+
+    void setLabel(const char *label)
+    {
+        portENTER_CRITICAL(&labelLock);
+        strlcpy(externalLabel, label ? label : "", sizeof(externalLabel));
+        portEXIT_CRITICAL(&labelLock);
+    }
+
+
+    // Gives up early while an exclusive external owner holds the link.
+    bool takeOpMutex()
+    {
+        Deadline deadline(OP_MUTEX_TIMEOUT_MS);
+        uint32_t startMs = millis();
+
+        while (xSemaphoreTake(opMutex, pdMS_TO_TICKS(MUTEX_POLL_MS)) != pdTRUE)
+        {
+            bool gaveUp = externalExclusive && millis() - startMs >= EXCLUSIVE_OWNER_WAIT_MS;
+            if (gaveUp || deadline.remaining() == 0)
+                return false;
+        }
+        return true;
+    }
+}
+
+
 namespace Rt4kLink
 {
 
-Session::Session()
+Session::Session(const char *op)
 {
     if (!SerialBridge::isConnected())
     {
@@ -22,13 +62,18 @@ Session::Session()
         return;
     }
 
-    if (xSemaphoreTake(opMutex, pdMS_TO_TICKS(OP_MUTEX_TIMEOUT_MS)) != pdTRUE)
+    internalWaiters++;
+    bool taken = takeOpMutex();
+    internalWaiters--;
+
+    if (!taken)
     {
-        failureReason = "RT4K link busy";
+        failureReason = externalHeld ? "RT4K in use by Retro-Bridge client" : "RT4K link busy";
         return;
     }
 
     locked = true;
+    internalOp = op;
     drainQueues();
 }
 
@@ -43,7 +88,64 @@ Session::~Session()
     finalAckSequence = -1;
     mode = Mode::AwaitingLines;
 
+    internalOp = nullptr;
     xSemaphoreGive(opMutex);
+}
+
+
+bool acquireExternal(uint32_t timeoutMs, const char *ownerLabel)
+{
+    if (xSemaphoreTake(opMutex, pdMS_TO_TICKS(timeoutMs)) != pdTRUE)
+        return false;
+
+    setLabel(ownerLabel);
+    externalExclusive = false;
+    externalHeld = true;
+    drainQueues();
+    return true;
+}
+
+
+void releaseExternal()
+{
+    if (!externalHeld)
+        return;
+
+    // The parser saw none of the raw traffic.
+    drainQueues();
+    externalHeld = false;
+    externalExclusive = false;
+    setLabel("");
+    xSemaphoreGive(opMutex);
+}
+
+
+void setExternalOwner(const char *ownerLabel, bool exclusive)
+{
+    setLabel(ownerLabel);
+    externalExclusive = exclusive;
+}
+
+
+bool internalWaiting()
+{
+    return internalWaiters > 0;
+}
+
+
+String currentOwner()
+{
+    if (externalHeld)
+    {
+        char copy[MAX_OWNER_LABEL];
+        portENTER_CRITICAL(&labelLock);
+        memcpy(copy, externalLabel, sizeof(copy));
+        portEXIT_CRITICAL(&labelLock);
+        return String(copy);
+    }
+
+    const char *op = internalOp;
+    return op ? String("internal:") + op : String();
 }
 
 

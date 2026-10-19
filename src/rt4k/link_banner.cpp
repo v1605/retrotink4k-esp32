@@ -78,7 +78,7 @@ Result getBannerInfoLocked(BannerInfo &out)
 
 Result getBannerInfo(BannerInfo &out)
 {
-    Session session;
+    Session session("banner");
     if (!session)
         return failure(session.error());
 
@@ -91,7 +91,7 @@ Result downloadBanner(BannerInfo &info, std::vector<uint8_t> &out, const String 
     unchanged = false;
 
     // One session, so no command lands between the query and the download.
-    Session session;
+    Session session("banner");
     if (!session)
         return failure(session.error());
 

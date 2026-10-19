@@ -20,11 +20,11 @@ namespace Rt4kLink
 
     // One RT4K operation: checks the FT232R, takes opMutex and drops stale
     // replies. Destruction returns the parser to line mode and releases the
-    // mutex. Test it before use; error() says why it failed.
+    // mutex. Test it before use; error() says why it failed. op: a literal.
     class Session
     {
     public:
-        Session();
+        explicit Session(const char *op);
         ~Session();
 
         Session(const Session &) = delete;

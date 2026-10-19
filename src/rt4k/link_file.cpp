@@ -79,7 +79,7 @@ Result downloadFile(const String &path, std::vector<uint8_t> &out)
     if (!isValidPath(cleanPath))
         return failure("Invalid path");
 
-    Session session;
+    Session session("get");
     if (!session)
         return failure(session.error());
 
@@ -96,7 +96,7 @@ Result uploadFile(const String &path, const uint8_t *data, size_t length, const 
     if (length > MAX_FILE_BYTES)
         return failure("File too large");
 
-    Session session;
+    Session session("put");
     if (!session)
         return failure(session.error());
 

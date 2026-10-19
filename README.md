@@ -26,6 +26,10 @@ configuration — no PC or USB cable required once set up.
 - **OTA updates** *(optional, per board)* — flash firmware and the web UI
   together from the browser instead of over USB, on boards built with OTA
   support. See [API](#api) and [Adding a new board](#adding-a-new-board).
+- **Retro-Bridge API** — [RT4K Profiler](https://rt4k-profiler.pipe.hr) and
+  [RT4K Remote](https://rt4k-remote.pipe.hr) can use the board as their
+  Retro-Bridge: enter `<hostname>.local` (no port) and allow local network
+  access. See [Retro-Bridge API](#retro-bridge-api).
 - **Self-contained** — the web UI is a static Svelte app served straight
   from the ESP32's onboard flash (LittleFS); nothing is fetched externally
   once the AP-mode fallback UI is loaded.
@@ -162,7 +166,8 @@ POST bodies are `application/x-www-form-urlencoded` unless noted.
 
 **Status & serial**
 - `GET /api/status` → `{"ftdi_connected", "baud", "wifi_ssid", "wifi_ip",
-  "ota_supported"}`
+  "ota_supported", "retro_bridge": {"clients", "owner"}}` (`owner` is who
+  holds the RT4K link, e.g. `lease:1/7`, `internal:osd`, or `""`)
 - `POST /api/serial` — `baud` (`2000000` or `115200`) — switches the
   ESP32↔FT232R link speed to match the RT4K firmware's expected baud.
 - `POST /api/command` — `command`, a raw line sent verbatim to the RT4K's
@@ -236,12 +241,9 @@ field says whether this build has it)
     --data-binary @esp32-s3-devkitc1-n16r8-ota-update.bin http://<host>/api/ota/upload
   ```
   The `Content-Type` header is required, not optional — without it curl
-  defaults to `application/x-www-form-urlencoded` for `--data-binary`, which
-  makes ESPAsyncWebServer try to buffer the whole multi-MB body byte-by-byte
-  into a String for form parsing instead of streaming it, crashing the device
-  partway through. The endpoint rejects any other wrong Content-Type with a
-  clean 400 -- this is the one case it can't, since the crash happens inside
-  ESPAsyncWebServer before the request ever reaches this handler.
+  defaults to `application/x-www-form-urlencoded` for `--data-binary`, and
+  the endpoint rejects the upload with a 400. The same applies to the
+  profile and RT4K firmware uploads.
   Applies immediately and reboots on success; there's no confirmation step
   and no rollback, so double-check it's the right file for the board
   before sending it. The filesystem is written first and the firmware
@@ -270,6 +272,34 @@ Three WebSocket endpoints back the UI and are usable directly too:
 Everything below this point is for building from source instead of using a
 release — not needed just to flash or update a board.
 
+
+### Retro-Bridge API
+
+`/api/v1/*` implements the Retro-Bridge API v1 that RT4K Profiler and RT4K
+Remote use, over the USB (FT232R) link only. It uses Retro-Bridge's own
+shapes, not the `{"ok": ...}` ones above: errors are `{"error": "<code>"}`
+(plus `"retry_after_ms"` when retrying makes sense), and every reply carries
+CORS and Private Network Access headers.
+
+- `GET /api/v1/info`, `GET /api/v1/status`
+- `POST /api/v1/clients` → `{"client_id", "expires_ms"}`;
+  `DELETE /api/v1/clients/{id}`. A client expires after 5 minutes unused.
+- `POST /api/v1/clients/{id}/transactions?request_id=&completion=&idle_ms=&timeout_ms=&priority=`
+  — raw command bytes in, raw reply bytes out. `completion` is `idle_gap`
+  (default), `first_reply_line` or `no_reply`. A repeated `request_id` is
+  never re-sent.
+- `POST /api/v1/clients/{id}/leases?lease_id=&mode=exclusive|no_ack&lifetime_ms=&idle_ms=`
+  — exclusive, byte-transparent use of the link, with `…/leases/{lid}`
+  (state), `…/write?wait_ms=`, `…/read?cursor=&wait_ms=` (long-poll),
+  `…/release` and `…/cancel`.
+- `POST /api/v1/clients/{id}/wake?timeout_ms=` — sends `pwr on`, then
+  probes `ver` until the RT4K answers.
+
+The web UI keeps working alongside Retro-Bridge clients. Its own RT4K
+operations (remote buttons, OSD view, profiles) go first: they run in the next
+gap between Retro-Bridge jobs, usually within about 150 ms. Only during a long
+lease, such as a file transfer, do they give up after about 2 seconds with
+"RT4K in use by Retro-Bridge client".
 
 ## Building the firmware
 

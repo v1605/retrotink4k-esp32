@@ -6,6 +6,9 @@
 
 #include <vector>
 
+#include "web_server.h"
+#include "ws_channel.h"
+#include "../bridge/retro_bridge.h"
 #include "../rt4k/link.h"
 #include "../serial_bridge.h"
 
@@ -16,12 +19,13 @@ namespace
 
     constexpr int COMMAND_QUEUE_LEN = 32;
     constexpr uint32_t COMMAND_WORKER_STACK_BYTES = 8192;
+    constexpr size_t SEND_QUEUE_LEN = 64;
 
-    AsyncWebSocket ws("/ws");
+    WsChannel ws("/ws", "terminal_ws", SEND_QUEUE_LEN);
 
     struct QueuedCommand
     {
-        uint32_t clientId;
+        int fd;
         String text;
     };
 
@@ -41,10 +45,7 @@ namespace
             if (!result.ok)
             {
                 Serial.println("FTDI TX failed or not ready");
-
-                AsyncWebSocketClient *client = ws.client(item->clientId);
-                if (client)
-                    client->text("[TX failed - " + result.error + "]\r\n");
+                ws.sendText(item->fd, "[TX failed - " + result.error + "]\r\n");
             }
 
             delete item;
@@ -55,73 +56,46 @@ namespace
     // FT232R -> all WebSocket clients
     void handleSerialBridgeData(const uint8_t *data, size_t length)
     {
+        // No parser or terminal mirror for bridge traffic.
+        if (RetroBridge::ownsLink())
+        {
+            RetroBridge::onSerialRx(data, length);
+            return;
+        }
+
         // Parse first so feed() keeps up; skip the slower broadcast under a
         // backlog.
         std::vector<uint8_t> textBytes;
         Rt4kLink::feed(data, length, &textBytes);
 
         if (!textBytes.empty() && SerialBridge::pendingBytes() < BROADCAST_BACKLOG_THRESHOLD)
-            ws.binaryAll(textBytes.data(), textBytes.size());
+            ws.broadcastBinary(textBytes.data(), textBytes.size());
     }
 
 
     void handleSerialBridgeStatus(bool /*connected*/, const String &message)
     {
-        ws.textAll(message);
+        ws.broadcastText(message);
     }
 
 
-    void webSocketEvent(
-        AsyncWebSocket *server,
-        AsyncWebSocketClient *client,
-        AwsEventType type,
-        void *arg,
-        uint8_t *data,
-        size_t len)
+    esp_err_t handleWs(httpd_req_t *req)
     {
-        switch (type)
-        {
-            case WS_EVT_CONNECT:
-            {
-                Serial.printf("Web client connected: %u\n", client->id());
-                break;
-            }
+        WsChannel::Frame frame;
+        esp_err_t result;
+        if (!ws.receive(req, frame, result))
+            return result;
 
+        // Queued for commandWorkerTask to keep sends in order.
+        String text(reinterpret_cast<const char *>(frame.data.data()), frame.data.size());
+        while (text.endsWith("\r") || text.endsWith("\n"))
+            text.remove(text.length() - 1);
 
-            case WS_EVT_DISCONNECT:
-            {
-                Serial.printf("Web client disconnected: %u\n", client->id());
-                break;
-            }
+        auto *item = new QueuedCommand{frame.fd, text};
+        if (xQueueSend(commandQueue, &item, 0) != pdTRUE)
+            delete item;
 
-
-            case WS_EVT_DATA:
-            {
-                AwsFrameInfo *info = reinterpret_cast<AwsFrameInfo *>(arg);
-
-                // Make sure we received one complete frame.
-                if (!info->final || info->index != 0 || info->len != len)
-                    return;
-
-                // Queued for commandWorkerTask to keep sends in order.
-                if (info->opcode == WS_TEXT || info->opcode == WS_BINARY)
-                {
-                    String text(data, len);
-                    while (text.endsWith("\r") || text.endsWith("\n"))
-                        text.remove(text.length() - 1);
-
-                    auto *item = new QueuedCommand{client->id(), text};
-                    if (xQueueSend(commandQueue, &item, 0) != pdTRUE)
-                        delete item;
-                }
-
-                break;
-            }
-
-
-            default:
-                break;
-        }
+        return ESP_OK;
     }
 }
 
@@ -129,22 +103,16 @@ namespace
 namespace TerminalEndpoints
 {
 
-void begin(AsyncWebServer &server)
+void registerRoutes()
 {
     commandQueue = xQueueCreate(COMMAND_QUEUE_LEN, sizeof(QueuedCommand *));
     xTaskCreate(commandWorkerTask, "rt4k_cmd_worker", COMMAND_WORKER_STACK_BYTES, nullptr, 1, nullptr);
 
+    ws.begin();
     SerialBridge::onData(handleSerialBridgeData);
     SerialBridge::onStatus(handleSerialBridgeStatus);
 
-    ws.onEvent(webSocketEvent);
-    server.addHandler(&ws);
-}
-
-
-void cleanupClients()
-{
-    ws.cleanupClients();
+    WebServer::onWebSocket("/ws", handleWs);
 }
 
 } // namespace TerminalEndpoints

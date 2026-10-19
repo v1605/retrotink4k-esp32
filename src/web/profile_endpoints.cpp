@@ -2,9 +2,9 @@
 
 #include <ArduinoJson.h>
 
-#include <memory>
 #include <vector>
 
+#include "web_server.h"
 #include "web_util.h"
 #include "../rt4k/link.h"
 
@@ -13,16 +13,16 @@ namespace
     // Every path here is relative to this folder on the SD card.
     constexpr char PROFILE_ROOT[] = "profile/";
 
-    void handleProfileCurrent(AsyncWebServerRequest *request)
+    esp_err_t handleProfileCurrent(httpd_req_t *req)
     {
-        WebUtil::runDeferred(request, [](AsyncWebServerRequest *request)
+        return WebUtil::runDeferred(req, [](httpd_req_t *req)
         {
             Rt4kLink::Profile profile;
             Rt4kLink::Result result = Rt4kLink::getLoadedProfile(profile);
 
             if (!result.ok)
             {
-                WebUtil::sendOkOrError(request, false, result.error);
+                WebUtil::sendOkOrError(req, false, result.error);
                 return;
             }
 
@@ -33,23 +33,23 @@ namespace
             if (profile.loaded)
                 doc["path"] = profile.path;
 
-            request->send(200, "application/json", WebUtil::toJson(doc));
+            WebUtil::sendJson(req, 200, WebUtil::toJson(doc));
         });
     }
 
 
-    void handleProfileList(AsyncWebServerRequest *request)
+    esp_err_t handleProfileList(httpd_req_t *req)
     {
-        String path = WebUtil::paramOr(request, "path", "profile");
+        String path = WebUtil::queryParams(req).get("path", "profile");
 
-        WebUtil::runDeferred(request, [path](AsyncWebServerRequest *request)
+        return WebUtil::runDeferred(req, [path](httpd_req_t *req)
         {
             std::vector<Rt4kLink::Entry> entries;
             Rt4kLink::Result result = Rt4kLink::listProfiles(path, entries);
 
             if (!result.ok)
             {
-                WebUtil::sendOkOrError(request, false, result.error);
+                WebUtil::sendOkOrError(req, false, result.error);
                 return;
             }
 
@@ -65,111 +65,99 @@ namespace
                 e["size"] = entry.size;
             }
 
-            request->send(200, "application/json", WebUtil::toJson(doc));
+            WebUtil::sendJson(req, 200, WebUtil::toJson(doc));
         });
     }
 
 
     // Loading replaces the live settings; there's no separate reset.
-    void handleProfileLoad(AsyncWebServerRequest *request)
+    esp_err_t handleProfileLoad(httpd_req_t *req)
     {
+        WebUtil::Params form;
         String name;
-        if (!WebUtil::requireParam(request, "name", true, name))
-            return;
+        if (!WebUtil::readForm(req, form) || !WebUtil::requireParam(req, form, "name", name))
+            return ESP_OK;
 
-        WebUtil::runDeferred(request, [name](AsyncWebServerRequest *request)
+        return WebUtil::runDeferred(req, [name](httpd_req_t *req)
         {
             Rt4kLink::Result result = Rt4kLink::loadProfile(name);
-            WebUtil::sendOkOrError(request, result.ok, result.error);
+            WebUtil::sendOkOrError(req, result.ok, result.error);
         });
     }
 
 
-    void handleProfileDelete(AsyncWebServerRequest *request)
+    esp_err_t handleProfileDelete(httpd_req_t *req)
     {
+        WebUtil::Params form;
         String name;
-        if (!WebUtil::requireParam(request, "name", true, name))
-            return;
+        if (!WebUtil::readForm(req, form) || !WebUtil::requireParam(req, form, "name", name))
+            return ESP_OK;
 
-        WebUtil::runDeferred(request, [name](AsyncWebServerRequest *request)
+        return WebUtil::runDeferred(req, [name](httpd_req_t *req)
         {
             Rt4kLink::Result result = Rt4kLink::deleteFile(PROFILE_ROOT + name);
-            WebUtil::sendOkOrError(request, result.ok, result.error);
+            WebUtil::sendOkOrError(req, result.ok, result.error);
         });
     }
 
 
-    void handleProfileDownload(AsyncWebServerRequest *request)
+    esp_err_t handleProfileDownload(httpd_req_t *req)
     {
         String name;
-        if (!WebUtil::requireParam(request, "name", false, name))
-            return;
+        if (!WebUtil::requireParam(req, WebUtil::queryParams(req), "name", name))
+            return ESP_OK;
 
-        WebUtil::runDeferred(request, [name](AsyncWebServerRequest *request)
+        return WebUtil::runDeferred(req, [name](httpd_req_t *req)
         {
             std::vector<uint8_t> data;
             Rt4kLink::Result result = Rt4kLink::downloadFile(PROFILE_ROOT + name, data);
 
             if (!result.ok)
             {
-                WebUtil::sendOkOrError(request, false, result.error);
+                WebUtil::sendOkOrError(req, false, result.error);
                 return;
             }
 
             int slash = name.lastIndexOf('/');
             String baseName = slash >= 0 ? name.substring(slash + 1) : name;
 
-            AsyncResponseStream *response =
-                request->beginResponseStream("application/octet-stream");
-
-            response->addHeader(
-                "Content-Disposition",
-                "attachment; filename=\"" + baseName + "\""
-            );
-
-            response->write(data.data(), data.size());
-
-            request->send(response);
+            WebUtil::Response(req)
+                .header("Content-Disposition", "attachment; filename=\"" + baseName + "\"")
+                .send(200, "application/octet-stream", data.data(), data.size());
         });
     }
 
 
-    // Body handler: called repeatedly with chunks until index + len == total.
-    void handleProfileUploadBody(
-        AsyncWebServerRequest *request,
-        uint8_t *data,
-        size_t len,
-        size_t index,
-        size_t total)
+    esp_err_t handleProfileUpload(httpd_req_t *req)
     {
-        std::shared_ptr<std::vector<uint8_t>> body =
-            WebUtil::collectBody(request, data, len, index, total, Rt4kLink::MAX_FILE_BYTES);
-        if (!body)
-            return;
-
         String name;
-        if (!WebUtil::requireParam(request, "name", false, name))
-            return;
-
-        // Not runDeferred(): the write completes even if the client disconnects.
-        AsyncWebServerRequestPtr weakRequest = request->pause();
-
-        bool started = WebUtil::runInBackground([weakRequest, name, body]()
+        if (!WebUtil::requireParam(req, WebUtil::queryParams(req), "name", name))
         {
-            Rt4kLink::Result result = Rt4kLink::uploadFile(
-                PROFILE_ROOT + name,
-                body->data(),
-                body->size()
-            );
+            WebUtil::closeConnection(req);
+            return ESP_OK;
+        }
 
-            auto paused = weakRequest.lock();
-            if (paused)
-                WebUtil::sendOkOrError(paused.get(), result.ok, result.error);
+        // The body arrives on the worker, so a large upload doesn't hold up
+        // the server.
+        return WebUtil::runDeferred(req, [name](httpd_req_t *req)
+        {
+            size_t total = req->content_len;
+            if (!WebUtil::isOctetStream(req) || total == 0 || total > Rt4kLink::MAX_FILE_BYTES)
+            {
+                WebUtil::sendError(req, 400, WebUtil::isOctetStream(req)
+                    ? "Invalid upload size" : "Content-Type must be application/octet-stream");
+                WebUtil::closeConnection(req);
+                return;
+            }
+
+            std::vector<uint8_t> body(total);
+            if (!WebUtil::readBody(req, body.data(), total))
+                return;
+
+            // Completes even if the client has gone by now.
+            Rt4kLink::Result result = Rt4kLink::uploadFile(PROFILE_ROOT + name, body.data(), body.size());
+            WebUtil::sendOkOrError(req, result.ok, result.error);
         });
-
-        // send() resumes the paused request.
-        if (!started)
-            WebUtil::sendError(request, 503, "Out of memory");
     }
 }
 
@@ -177,21 +165,14 @@ namespace
 namespace ProfileEndpoints
 {
 
-void registerRoutes(AsyncWebServer &server)
+void registerRoutes()
 {
-    server.on("/api/profiles/current", HTTP_GET, handleProfileCurrent);
-    // exact(): a plain path would also match /api/profiles/download.
-    server.on(AsyncURIMatcher::exact("/api/profiles"), HTTP_GET, handleProfileList);
-    server.on("/api/profiles/load", HTTP_POST, handleProfileLoad);
-    server.on("/api/profiles/delete", HTTP_POST, handleProfileDelete);
-    server.on("/api/profiles/download", HTTP_GET, handleProfileDownload);
-    server.on(
-        "/api/profiles/upload",
-        HTTP_POST,
-        [](AsyncWebServerRequest *request) {},
-        nullptr,
-        handleProfileUploadBody
-    );
+    WebServer::on("/api/profiles/current", HTTP_GET, handleProfileCurrent);
+    WebServer::on("/api/profiles", HTTP_GET, handleProfileList);
+    WebServer::on("/api/profiles/load", HTTP_POST, handleProfileLoad);
+    WebServer::on("/api/profiles/delete", HTTP_POST, handleProfileDelete);
+    WebServer::on("/api/profiles/download", HTTP_GET, handleProfileDownload);
+    WebServer::on("/api/profiles/upload", HTTP_POST, handleProfileUpload);
 }
 
 } // namespace ProfileEndpoints

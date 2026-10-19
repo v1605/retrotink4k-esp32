@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 
+#include "web_server.h"
 #include "web_util.h"
 #include "../wifi_manager.h"
 
@@ -53,7 +54,7 @@ namespace
     }
 
 
-    void handleWifiGet(AsyncWebServerRequest *request)
+    esp_err_t handleWifiGet(httpd_req_t *req)
     {
         JsonDocument doc;
         doc["mode"] = WifiManager::getModeName();
@@ -62,67 +63,63 @@ namespace
         doc["hostname"] = WifiManager::getHostname();
         writeScanResult(doc["scan"].to<JsonObject>(), WifiManager::getLastScanResult());
 
-        request->send(200, "application/json", WebUtil::toJson(doc));
+        return WebUtil::sendJson(req, 200, WebUtil::toJson(doc));
     }
 
 
-    void handleWifiPost(AsyncWebServerRequest *request)
+    esp_err_t handleWifiPost(httpd_req_t *req)
     {
+        WebUtil::Params form;
         String ssid;
-        if (!WebUtil::requireParam(request, "ssid", true, ssid))
-            return;
+        if (!WebUtil::readForm(req, form) || !WebUtil::requireParam(req, form, "ssid", ssid))
+            return ESP_OK;
 
-        String password =
-            request->hasParam("password", true)
-                ? request->getParam("password", true)->value()
-                : "";
+        String password = form.get("password");
 
         if (ssid.length() == 0)
-        {
-            WebUtil::sendError(request, 400, "ssid must not be empty");
-            return;
-        }
+            return WebUtil::sendError(req, 400, "ssid must not be empty");
 
-        request->send(200, "application/json", WebUtil::jsonOk());
+        WebUtil::sendJson(req, 200, WebUtil::jsonOk());
 
         WifiManager::applyCredentialsAndRestart(ssid, password);
+        return ESP_OK;
     }
 
 
-    void handleWifiForget(AsyncWebServerRequest *request)
+    esp_err_t handleWifiForget(httpd_req_t *req)
     {
-        request->send(200, "application/json", WebUtil::jsonOk());
+        WebUtil::sendJson(req, 200, WebUtil::jsonOk());
 
         WifiManager::forgetCredentialsAndRestart();
+        return ESP_OK;
     }
 
 
-    void handleHostnamePost(AsyncWebServerRequest *request)
+    esp_err_t handleHostnamePost(httpd_req_t *req)
     {
+        WebUtil::Params form;
         String hostname;
-        if (!WebUtil::requireParam(request, "hostname", true, hostname))
-            return;
+        if (!WebUtil::readForm(req, form) || !WebUtil::requireParam(req, form, "hostname", hostname))
+            return ESP_OK;
 
         if (!isValidHostname(hostname))
-        {
-            WebUtil::sendError(request, 400, "Invalid hostname (letters, digits, hyphens only, 1-32 chars)");
-            return;
-        }
+            return WebUtil::sendError(req, 400, "Invalid hostname (letters, digits, hyphens only, 1-32 chars)");
 
-        request->send(200, "application/json", WebUtil::jsonOk());
+        WebUtil::sendJson(req, 200, WebUtil::jsonOk());
 
         WifiManager::applyHostnameAndRestart(hostname);
+        return ESP_OK;
     }
 
 
-    void handleWifiScan(AsyncWebServerRequest *request)
+    esp_err_t handleWifiScan(httpd_req_t *req)
     {
         // In AP-only mode scanning can drop this connection; the result is
         // still cached for /api/wifi.
-        WebUtil::runDeferred(request, [](AsyncWebServerRequest *request)
+        return WebUtil::runDeferred(req, [](httpd_req_t *req)
         {
             WifiManager::ScanResult scan = WifiManager::scanNetworks();
-            request->send(200, "application/json", scanResultJson(scan));
+            WebUtil::sendJson(req, 200, scanResultJson(scan));
         });
     }
 }
@@ -131,14 +128,13 @@ namespace
 namespace WifiEndpoints
 {
 
-void registerRoutes(AsyncWebServer &server)
+void registerRoutes()
 {
-    // exact(): a plain path would also match /api/wifi/scan and the rest.
-    server.on(AsyncURIMatcher::exact("/api/wifi"), HTTP_GET, handleWifiGet);
-    server.on(AsyncURIMatcher::exact("/api/wifi"), HTTP_POST, handleWifiPost);
-    server.on("/api/wifi/forget", HTTP_POST, handleWifiForget);
-    server.on("/api/wifi/hostname", HTTP_POST, handleHostnamePost);
-    server.on("/api/wifi/scan", HTTP_GET, handleWifiScan);
+    WebServer::on("/api/wifi", HTTP_GET, handleWifiGet);
+    WebServer::on("/api/wifi", HTTP_POST, handleWifiPost);
+    WebServer::on("/api/wifi/forget", HTTP_POST, handleWifiForget);
+    WebServer::on("/api/wifi/hostname", HTTP_POST, handleHostnamePost);
+    WebServer::on("/api/wifi/scan", HTTP_GET, handleWifiScan);
 }
 
 } // namespace WifiEndpoints

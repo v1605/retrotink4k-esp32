@@ -33,7 +33,7 @@ void feed(const uint8_t *data, size_t length, std::vector<uint8_t> *textOut)
 
 Result sendRawCommand(const String &text)
 {
-    Session session;
+    Session session("command");
     if (!session)
         return failure(session.error());
 
@@ -49,7 +49,7 @@ Result sendRawCommand(const String &text)
 // while it's still processing this one.
 Result sendRemoteButton(const String &button)
 {
-    Session session;
+    Session session("remote");
     if (!session)
         return failure(session.error());
 

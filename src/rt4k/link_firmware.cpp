@@ -19,7 +19,7 @@ namespace
     // Sends a fwup command; on success lines.back() is its "fwup" reply line.
     Result runFwupCommand(const String &command, uint32_t timeoutMs, std::vector<String> &lines)
     {
-        Session session;
+        Session session("fwup");
         if (!session)
             return failure(session.error());
 
@@ -37,7 +37,7 @@ namespace
 
 Result getDeviceInfo(DeviceInfo &out)
 {
-    Session session;
+    Session session("ver");
     if (!session)
         return failure(session.error());
 

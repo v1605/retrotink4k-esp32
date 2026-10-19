@@ -7,6 +7,7 @@
 #include <set>
 
 #include "osd_endpoints.h"
+#include "web_server.h"
 #include "web_util.h"
 #include "../rt4k/link.h"
 
@@ -50,27 +51,24 @@ namespace
     }
 
 
-    void handleRemoteButton(AsyncWebServerRequest *request)
+    esp_err_t handleRemoteButton(httpd_req_t *req)
     {
+        WebUtil::Params form;
         String button;
-        if (!WebUtil::requireParam(request, "button", true, button))
-            return;
+        if (!WebUtil::readForm(req, form) || !WebUtil::requireParam(req, form, "button", button))
+            return ESP_OK;
 
         if (VALID_BUTTONS.find(button) == VALID_BUTTONS.end())
-        {
-            WebUtil::sendError(request, 400, "Unknown button: " + button);
-            return;
-        }
+            return WebUtil::sendError(req, 400, "Unknown button: " + button);
 
         auto *queued = new String(button);
         if (xQueueSend(buttonQueue, &queued, 0) != pdTRUE)
         {
             delete queued;
-            WebUtil::sendError(request, 503, "Button queue full");
-            return;
+            return WebUtil::sendError(req, 503, "Button queue full");
         }
 
-        request->send(200, "application/json", WebUtil::jsonOk());
+        return WebUtil::sendJson(req, 200, WebUtil::jsonOk());
     }
 }
 
@@ -78,12 +76,12 @@ namespace
 namespace RemoteEndpoints
 {
 
-void begin(AsyncWebServer &server)
+void registerRoutes()
 {
     buttonQueue = xQueueCreate(QUEUE_LEN, sizeof(String *));
     xTaskCreate(buttonWorkerTask, "rt4k_button_worker", WORKER_STACK_BYTES, nullptr, 1, nullptr);
 
-    server.on("/api/remote", HTTP_POST, handleRemoteButton);
+    WebServer::on("/api/remote", HTTP_POST, handleRemoteButton);
 }
 
 } // namespace RemoteEndpoints

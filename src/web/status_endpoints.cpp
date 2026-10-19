@@ -3,14 +3,16 @@
 #include <ArduinoJson.h>
 
 #include "ota_endpoints.h"
+#include "web_server.h"
 #include "web_util.h"
+#include "../bridge/retro_bridge.h"
 #include "../rt4k/link.h"
 #include "../serial_bridge.h"
 #include "../wifi_manager.h"
 
 namespace
 {
-    void handleStatus(AsyncWebServerRequest *request)
+    esp_err_t handleStatus(httpd_req_t *req)
     {
         JsonDocument doc;
         doc["ftdi_connected"] = SerialBridge::isConnected();
@@ -19,41 +21,44 @@ namespace
         doc["wifi_ip"] = WifiManager::getIP().toString();
         doc["ota_supported"] = OtaEndpoints::isEnabled();
 
-        request->send(200, "application/json", WebUtil::toJson(doc));
+        JsonObject bridge = doc["retro_bridge"].to<JsonObject>();
+        bridge["clients"] = RetroBridge::clientCount();
+        bridge["owner"] = RetroBridge::ownerLabel();
+
+        return WebUtil::sendJson(req, 200, WebUtil::toJson(doc));
     }
 
 
-    void handleSerialPost(AsyncWebServerRequest *request)
+    esp_err_t handleSerialPost(httpd_req_t *req)
     {
+        WebUtil::Params form;
         String value;
-        if (!WebUtil::requireParam(request, "baud", true, value))
-            return;
+        if (!WebUtil::readForm(req, form) || !WebUtil::requireParam(req, form, "baud", value))
+            return ESP_OK;
 
         uint32_t baud = value.toInt();
 
         if (baud != 2000000 && baud != 115200)
-        {
-            WebUtil::sendError(request, 400, "Unsupported baud rate");
-            return;
-        }
+            return WebUtil::sendError(req, 400, "Unsupported baud rate");
 
         SerialBridge::setBaud(baud);
 
-        request->send(200, "application/json", WebUtil::jsonOk());
+        return WebUtil::sendJson(req, 200, WebUtil::jsonOk());
     }
 
 
-    void handleCommand(AsyncWebServerRequest *request)
+    esp_err_t handleCommand(httpd_req_t *req)
     {
+        WebUtil::Params form;
         String cmd;
-        if (!WebUtil::requireParam(request, "command", true, cmd))
-            return;
+        if (!WebUtil::readForm(req, form) || !WebUtil::requireParam(req, form, "command", cmd))
+            return ESP_OK;
 
         // Via Rt4kLink so it can't interleave with other RT4K operations.
-        WebUtil::runDeferred(request, [cmd](AsyncWebServerRequest *request)
+        return WebUtil::runDeferred(req, [cmd](httpd_req_t *req)
         {
             Rt4kLink::Result result = Rt4kLink::sendRawCommand(cmd);
-            WebUtil::sendOkOrError(request, result.ok, result.error);
+            WebUtil::sendOkOrError(req, result.ok, result.error);
         });
     }
 }
@@ -62,11 +67,11 @@ namespace
 namespace StatusEndpoints
 {
 
-void registerRoutes(AsyncWebServer &server)
+void registerRoutes()
 {
-    server.on("/api/status", HTTP_GET, handleStatus);
-    server.on("/api/serial", HTTP_POST, handleSerialPost);
-    server.on("/api/command", HTTP_POST, handleCommand);
+    WebServer::on("/api/status", HTTP_GET, handleStatus);
+    WebServer::on("/api/serial", HTTP_POST, handleSerialPost);
+    WebServer::on("/api/command", HTTP_POST, handleCommand);
 }
 
 } // namespace StatusEndpoints

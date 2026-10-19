@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 
+#include "bridge/retro_bridge.h"
 #include "net_watchdog.h"
 #include "rt4k/link.h"
 #include "serial_bridge.h"
@@ -21,6 +22,7 @@ void setup()
     WifiManager::begin();
     SerialBridge::begin();
     Rt4kLink::begin();
+    RetroBridge::begin();
     WebServer::begin();
 
     Serial.println();

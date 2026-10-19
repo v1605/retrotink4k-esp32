@@ -31,7 +31,7 @@ namespace
     constexpr size_t RX_RING_BYTES = 128 * 1024;
     constexpr size_t RX_RING_FALLBACK_BYTES = 16 * 1024;
     RingbufHandle_t rxRing = nullptr;
-    std::atomic<uint32_t> droppedRxBytes{0};
+    std::atomic<uint32_t> rxDropCount{0};
     constexpr size_t SERIAL_WRITE_QUEUE_DEPTH = 4;
     constexpr size_t SERIAL_WRITE_BUFFER_BYTES = 2560;
 
@@ -195,7 +195,7 @@ namespace
             if (linkSetupPending.exchange(false))
                 applyLinkSetup();
 
-            uint32_t drops = droppedRxBytes;
+            uint32_t drops = rxDropCount;
             if (drops != reportedDrops && millis() - lastReportMs >= DROP_REPORT_INTERVAL_MS)
             {
                 Serial.printf("WARNING: RX buffer full, %" PRIu32 " bytes dropped since boot\n", drops);
@@ -258,7 +258,7 @@ void begin()
             return;
 
         if (xRingbufferSend(rxRing, data.data, data.length, 0) != pdTRUE)
-            droppedRxBytes += data.length;
+            rxDropCount += data.length;
     });
 
     EspUsbHostConfig usbConfig;
@@ -319,6 +319,21 @@ bool sendRaw(const uint8_t *data, size_t length)
         return false;
 
     return cdcSerial.write(data, length) == length;
+}
+
+
+bool flush(uint32_t timeoutMs)
+{
+    if (!ftdiConnected)
+        return false;
+
+    return usb.serialWriteFlush(timeoutMs, ftdiAddress);
+}
+
+
+uint32_t droppedRxBytes()
+{
+    return rxDropCount;
 }
 
 

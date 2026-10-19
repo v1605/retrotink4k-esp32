@@ -1,7 +1,5 @@
 #pragma once
 
-#include <ESPAsyncWebServer.h>
-
 // RT4K firmware updates:
 //   /api/firmware/upload  -- write a file to the SD card root
 //   /api/firmware/check   -- version of rt4kup.bin ("fwup check")
@@ -11,8 +9,5 @@
 
 namespace FirmwareEndpoints
 {
-    void registerRoutes(AsyncWebServer &server);
-
-    // Drops closed /ws/firmware clients.
-    void cleanupClients();
+    void registerRoutes();
 }

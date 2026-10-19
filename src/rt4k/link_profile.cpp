@@ -23,7 +23,7 @@ namespace
 
 Result getLoadedProfile(Profile &out)
 {
-    Session session;
+    Session session("prof get");
     if (!session)
         return failure(session.error());
 
@@ -61,7 +61,7 @@ Result loadProfile(const String &name)
         name.indexOf("..") >= 0 || name.indexOf('\\') >= 0)
         return failure("Invalid profile name");
 
-    Session session;
+    Session session("prof load");
     if (!session)
         return failure(session.error());
 
@@ -78,7 +78,7 @@ Result deleteFile(const String &path)
     if (path.length() == 0 || path.indexOf("..") >= 0)
         return failure("Invalid path");
 
-    Session session;
+    Session session("rm");
     if (!session)
         return failure(session.error());
 
@@ -95,7 +95,7 @@ Result listProfiles(const String &path, std::vector<Entry> &out)
     if (path.indexOf("..") >= 0)
         return failure("Invalid path");
 
-    Session session;
+    Session session("ls");
     if (!session)
         return failure(session.error());
 

@@ -3,79 +3,29 @@
 #include <ArduinoJson.h>
 #include <base64.h>
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
-#include <freertos/task.h>
-
+#include "web_server.h"
 #include "web_util.h"
+#include "ws_channel.h"
 #include "../rt4k/link.h"
 
 namespace
 {
     constexpr int SEND_QUEUE_LEN = 16;
-    // Client ids start at 1.
-    constexpr uint32_t BROADCAST = 0;
+    // Room for a reply that is still being built when the queue is full.
+    constexpr uint32_t REPLY_WAIT_MS = 100;
 
-    AsyncWebSocket osdWs("/ws/osd");
-    QueueHandle_t sendQueue = nullptr;
+    // Requests run on separate tasks; the channel's sender task keeps each
+    // client's messages in order.
+    WsChannel osdWs("/ws/osd", "osd_ws_send", SEND_QUEUE_LEN);
 
-    struct OutgoingMessage
+    void sendToClient(int clientId, JsonDocument &doc)
     {
-        uint32_t clientId;
-        String text;
-        std::vector<uint8_t> binaryPayload;
-        bool hasBinary = false;
-    };
-
-    // Requests run on separate tasks, but a client may only be written from
-    // one, so all sends go through this queue.
-    void sendWorkerTask(void * /*arg*/)
-    {
-        for (;;)
-        {
-            OutgoingMessage *msg = nullptr;
-            if (xQueueReceive(sendQueue, &msg, portMAX_DELAY) != pdTRUE)
-                continue;
-
-            if (msg->clientId == BROADCAST)
-            {
-                osdWs.textAll(msg->text);
-            }
-            else if (AsyncWebSocketClient *client = osdWs.client(msg->clientId))
-            {
-                client->text(msg->text);
-                if (msg->hasBinary)
-                    client->binary(msg->binaryPayload.data(), msg->binaryPayload.size());
-            }
-
-            delete msg;
-        }
-    }
-
-    void enqueueSend(uint32_t clientId, const String &text, const std::vector<uint8_t> *binaryPayload = nullptr)
-    {
-        auto *msg = new OutgoingMessage();
-        msg->clientId = clientId;
-        msg->text = text;
-
-        if (binaryPayload)
-        {
-            msg->binaryPayload = *binaryPayload;
-            msg->hasBinary = true;
-        }
-
-        if (xQueueSend(sendQueue, &msg, 0) != pdTRUE)
-            delete msg;
-    }
-
-    void sendToClient(uint32_t clientId, JsonDocument &doc)
-    {
-        enqueueSend(clientId, WebUtil::toJson(doc));
+        osdWs.sendText(clientId, WebUtil::toJson(doc), REPLY_WAIT_MS);
     }
 
 
     // Answers a request whose worker task couldn't be created.
-    void sendStartFailure(uint32_t clientId, int requestId, const char *type)
+    void sendStartFailure(int clientId, int requestId, const char *type)
     {
         JsonDocument doc;
         doc["id"] = requestId;
@@ -86,7 +36,7 @@ namespace
     }
 
 
-    void handleFontRequest(uint32_t clientId, int requestId)
+    void handleFontRequest(int clientId, int requestId)
     {
         Rt4kLink::OsdFont font;
         Rt4kLink::Result result = Rt4kLink::downloadOsdFont(font);
@@ -110,7 +60,7 @@ namespace
     }
 
 
-    void handlePlaneRequest(uint32_t clientId, int requestId, int plane)
+    void handlePlaneRequest(int clientId, int requestId, int plane)
     {
         Rt4kLink::OsdPlane osdPlane;
         Rt4kLink::Result result = Rt4kLink::downloadOsdPlane(plane, osdPlane);
@@ -146,7 +96,7 @@ namespace
 
     // The image goes as a binary frame, not base64 JSON, to save RAM. The
     // JSON metadata (hasData: true) is sent first.
-    void handleBannerRequest(uint32_t clientId, int requestId, const String &knownPath)
+    void handleBannerRequest(int clientId, int requestId, const String &knownPath)
     {
         Rt4kLink::BannerInfo info;
         std::vector<uint8_t> bytes;
@@ -184,11 +134,12 @@ namespace
         }
 
         doc["hasData"] = true;
-        enqueueSend(clientId, WebUtil::toJson(doc), &bytes);
+        osdWs.sendText(clientId, WebUtil::toJson(doc), REPLY_WAIT_MS);
+        osdWs.sendBinary(clientId, bytes.data(), bytes.size(), REPLY_WAIT_MS);
     }
 
 
-    void handleWsMessage(uint32_t clientId, const String &text)
+    void handleWsMessage(int clientId, const String &text)
     {
         JsonDocument request;
         if (deserializeJson(request, text) != DeserializationError::Ok)
@@ -217,23 +168,16 @@ namespace
     }
 
 
-    void osdWsEvent(
-        AsyncWebSocket * /*server*/,
-        AsyncWebSocketClient *client,
-        AwsEventType type,
-        void *arg,
-        uint8_t *data,
-        size_t len)
+    esp_err_t handleWs(httpd_req_t *req)
     {
-        if (type != WS_EVT_DATA)
-            return;
+        WsChannel::Frame frame;
+        esp_err_t result;
+        if (!osdWs.receive(req, frame, result) || !frame.text)
+            return result;
 
-        AwsFrameInfo *info = reinterpret_cast<AwsFrameInfo *>(arg);
-        if (!info->final || info->index != 0 || info->len != len || info->opcode != WS_TEXT)
-            return;
-
-        String text(data, len);
-        handleWsMessage(client->id(), text);
+        String text(reinterpret_cast<const char *>(frame.data.data()), frame.data.size());
+        handleWsMessage(frame.fd, text);
+        return ESP_OK;
     }
 }
 
@@ -241,32 +185,20 @@ namespace
 namespace OsdEndpoints
 {
 
-void registerRoutes(AsyncWebServer &server)
+void registerRoutes()
 {
-    sendQueue = xQueueCreate(SEND_QUEUE_LEN, sizeof(OutgoingMessage *));
-    xTaskCreate(sendWorkerTask, "osd_ws_send", 4096, nullptr, 1, nullptr);
-
-    osdWs.onEvent(osdWsEvent);
-    server.addHandler(&osdWs);
+    osdWs.begin();
+    WebServer::onWebSocket("/ws/osd", handleWs);
 }
 
 
 void notifyRemoteDone(const String &button, bool ok)
 {
-    if (!sendQueue)
-        return;
-
     JsonDocument doc;
     doc["type"] = "remote";
     doc["button"] = button;
     doc["ok"] = ok;
-    enqueueSend(BROADCAST, WebUtil::toJson(doc));
-}
-
-
-void cleanupClients()
-{
-    osdWs.cleanupClients();
+    osdWs.broadcastText(WebUtil::toJson(doc));
 }
 
 } // namespace OsdEndpoints
