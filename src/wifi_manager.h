@@ -29,6 +29,9 @@ namespace WifiManager
     };
 
     void begin();
+
+    void loop();
+
     void refreshMdns();
 
     Mode getMode();

@@ -52,11 +52,8 @@ void clearWifiCredentials()
 {
     Preferences prefs;
     prefs.begin(WIFI_NAMESPACE, false);
-
-    prefs.clear();
     prefs.remove(KEY_SSID);
     prefs.remove(KEY_PASSWORD);
-
     prefs.end();
 }
 

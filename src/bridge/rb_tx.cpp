@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 
 // rb_tx: the only writer while the bridge owns the link.
 

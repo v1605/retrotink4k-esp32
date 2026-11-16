@@ -7,7 +7,7 @@
 #include "web_util.h"
 #include "../bridge/retro_bridge.h"
 #include "../rt4k/link.h"
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 #include "../wifi_manager.h"
 
 namespace
@@ -17,6 +17,11 @@ namespace
         JsonDocument doc;
         doc["ftdi_connected"] = SerialBridge::isConnected();
         doc["baud"] = SerialBridge::getBaud();
+        doc["rx_dropped"] = SerialBridge::droppedRxBytes();
+        doc["rx_overruns"] = SerialBridge::rxOverruns();
+        doc["rx_framing_errors"] = SerialBridge::rxFramingErrors();
+        doc["rx_breaks"] = SerialBridge::rxBreaks();
+        doc["usb_status"] = SerialBridge::usbStatus();
         doc["wifi_ssid"] = WifiManager::getSSID();
         doc["wifi_ip"] = WifiManager::getIP().toString();
         doc["ota_supported"] = OtaEndpoints::isEnabled();

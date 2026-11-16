@@ -6,7 +6,7 @@
 #include <freertos/semphr.h>
 
 #include "protocol.h"
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 
 using namespace Rt4kProtocol;
 
@@ -74,6 +74,7 @@ Session::Session(const char *op)
 
     locked = true;
     internalOp = op;
+    capturing = true;
     drainQueues();
 }
 
@@ -88,6 +89,7 @@ Session::~Session()
     finalAckSequence = -1;
     mode = Mode::AwaitingLines;
 
+    capturing = false;
     internalOp = nullptr;
     xSemaphoreGive(opMutex);
 }

@@ -4,7 +4,7 @@
 #include <algorithm>
 
 #include "protocol.h"
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 
 using namespace Rt4kProtocol;
 

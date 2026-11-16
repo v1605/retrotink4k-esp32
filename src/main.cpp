@@ -4,7 +4,7 @@
 #include "bridge/retro_bridge.h"
 #include "net_watchdog.h"
 #include "rt4k/link.h"
-#include "serial_bridge.h"
+#include "ftdi/serial_bridge.h"
 #include "web/web_server.h"
 #include "wifi_manager.h"
 
@@ -33,14 +33,8 @@ void setup()
 void loop()
 {
     WebServer::loop();
+    WifiManager::loop();
     NetWatchdog::loop();
-
-    static uint32_t lastMdnsRefresh = 0;
-    if (millis() - lastMdnsRefresh >= 60000)
-    {
-        lastMdnsRefresh = millis();
-        WifiManager::refreshMdns();
-    }
 
     delay(1000);
 }

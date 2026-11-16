@@ -30,7 +30,7 @@ namespace RetroBridge
     constexpr uint32_t LEASE_LIFETIME_MAX_MS = 300000;
     constexpr uint32_t CLIENT_EXPIRY_MS = 300000;
 
-    // EspUsbHost's write queue takes up to 2560 B.
+    // Fits one SerialBridge TX transfer (2560 B).
     constexpr size_t TX_PIECE_BYTES = 2048;
     constexpr uint8_t MAX_LEASES = 8;
     // Finished transactions kept per client for request_id replays.

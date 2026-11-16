@@ -2,6 +2,8 @@
 
 #include <ArduinoJson.h>
 
+#include <memory>
+#include <new>
 #include <vector>
 
 #include "web_server.h"
@@ -151,11 +153,19 @@ namespace
             }
 
             std::vector<uint8_t> body(total);
-            if (!WebUtil::readBody(req, body.data(), total))
+            std::unique_ptr<uint8_t[]> body(new (std::nothrow) uint8_t[total]);
+            if (!body)
+            {
+                WebUtil::sendError(req, 503, "Not enough memory for the upload");
+                WebUtil::closeConnection(req);
+                return;
+            }
+
+            if (!WebUtil::readBody(req, body.get(), total))
                 return;
 
             // Completes even if the client has gone by now.
-            Rt4kLink::Result result = Rt4kLink::uploadFile(PROFILE_ROOT + name, body.data(), body.size());
+            Rt4kLink::Result result = Rt4kLink::uploadFile(PROFILE_ROOT + name, body.get(), total);
             WebUtil::sendOkOrError(req, result.ok, result.error);
         });
     }

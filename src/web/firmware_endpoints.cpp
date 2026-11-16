@@ -1,5 +1,7 @@
 #include "firmware_endpoints.h"
 
+#include <memory>
+#include <new>
 #include <vector>
 
 #include "web_server.h"
@@ -68,15 +70,23 @@ namespace
             }
 
             std::vector<uint8_t> body(length);
-            if (!WebUtil::readBody(req, body.data(), length))
+            std::unique_ptr<uint8_t[]> body(new (std::nothrow) uint8_t[length]);
+            if (!body)
+            {
+                WebUtil::sendError(req, 503, "Not enough memory for the upload");
+                WebUtil::closeConnection(req);
+                return;
+            }
+
+            if (!WebUtil::readBody(req, body.get(), length))
                 return;
 
             // Whole-percent steps; sent == total means the RT4K is verifying.
             int lastPercent = -1;
             Rt4kLink::Result result = Rt4kLink::uploadFile(
                 name,
-                body.data(),
-                body.size(),
+                body.get(),
+                length,
                 [&](size_t sent, size_t total)
                 {
                     if (sent >= total)

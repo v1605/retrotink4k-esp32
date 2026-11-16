@@ -6,7 +6,7 @@
 #include <cinttypes>
 #include <cstring>
 
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 
 namespace
 {

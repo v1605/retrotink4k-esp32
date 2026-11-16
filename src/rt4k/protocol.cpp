@@ -4,11 +4,12 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include <esp_rom_crc.h>
 #include <mbedtls/sha256.h>
 
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 
 using namespace Rt4kProtocol;
 
@@ -119,9 +120,12 @@ namespace
     }
 
 
-    void queueLine(const String &reply)
+    void queueLine(String reply)
     {
-        String *linePtr = new String(reply);
+        if (!capturing)
+            return;
+
+        String *linePtr = new String(std::move(reply));
         if (xQueueSend(lineQueue, &linePtr, 0) != pdTRUE)
             delete linePtr;
     }
@@ -159,7 +163,7 @@ namespace
                 resetDecoder();
             }
 
-            queueLine(reply);
+            queueLine(std::move(reply));
             return;
         }
 
@@ -190,7 +194,7 @@ namespace
                     {
                         transferFailed = true;
                         mode = Mode::AwaitingLines;
-                        queueLine(line);
+                        queueLine(std::move(line));
                     }
                 }
                 else if (b >= 0x20 && b <= 0x7e && huntLineBuffer.length() < MAX_HUNT_LINE_LENGTH)
@@ -318,6 +322,7 @@ std::atomic<Mode> mode{Mode::AwaitingLines};
 std::atomic<const char *> pendingReadyKeyword{nullptr};
 std::atomic<int> finalAckSequence{-1};
 std::atomic<bool> transferFailed{false};
+std::atomic<bool> capturing{false};
 SemaphoreHandle_t opMutex = nullptr;
 
 

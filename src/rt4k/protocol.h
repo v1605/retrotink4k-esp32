@@ -95,6 +95,7 @@ namespace Rt4kProtocol
     // Set (and the line queued) when the RT4K reports an upload failure as
     // text while frames are expected. Cleared by drainQueues().
     extern std::atomic<bool> transferFailed;
+    extern std::atomic<bool> capturing;
     extern SemaphoreHandle_t opMutex;
 
     void begin();

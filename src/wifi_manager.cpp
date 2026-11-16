@@ -17,9 +17,16 @@ namespace
     constexpr char AP_SSID[] = "TinkEsp32";
     constexpr char AP_PASSWORD[] = "12345678";
     constexpr uint32_t STA_CONNECT_TIMEOUT_MS = 15000;
+    // From access point mode, a saved network is retried this often.
+    constexpr uint32_t STA_RETRY_INTERVAL_MS = 60000;
+    constexpr uint32_t MDNS_REFRESH_INTERVAL_MS = 60000;
 
     WifiManager::Mode currentMode = WifiManager::Mode::ACCESS_POINT;
     String currentHostname;
+    WifiCredentials savedCreds;
+    uint32_t lastMdnsRefreshMs = 0;
+    uint32_t lastRetryMs = 0;
+    bool retrying = false;
     WifiManager::ScanResult lastScan;
     SemaphoreHandle_t lastScanMutex = xSemaphoreCreateMutex();
 
@@ -86,6 +93,39 @@ namespace
         Serial.printf("Password: %s\n", AP_PASSWORD);
         Serial.printf("IP: %s\n", WiFi.softAPIP().toString().c_str());
     }
+
+
+    // Connects alongside the access point; AP clients may drop briefly while
+    // the radio follows the station's channel.
+    void startStationRetry()
+    {
+        Serial.printf("Retrying WiFi \"%s\" from access point mode...\n", savedCreds.ssid.c_str());
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.begin(savedCreds.ssid.c_str(), savedCreds.password.c_str());
+        retrying = true;
+        lastRetryMs = millis();
+    }
+
+
+    void finishStationRetry(bool connected)
+    {
+        retrying = false;
+        if (!connected)
+        {
+            WiFi.disconnect();
+            WiFi.mode(WIFI_AP);
+            Serial.println("WiFi retry failed, staying in access point mode");
+            return;
+        }
+
+        WiFi.softAPdisconnect(true);
+        currentMode = WifiManager::Mode::STATION;
+        Serial.println();
+        Serial.println("WiFi connected");
+        Serial.printf("SSID: %s\n", savedCreds.ssid.c_str());
+        Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+        WifiManager::refreshMdns();
+    }
 }
 
 
@@ -105,21 +145,20 @@ void begin()
 
     WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) { refreshMdns(); }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
 
-    WifiCredentials creds =
-        Config::loadWifiCredentials();
+    savedCreds = Config::loadWifiCredentials();
 
-    if (creds.valid && connectStation(creds.ssid, creds.password))
+    if (savedCreds.valid && connectStation(savedCreds.ssid, savedCreds.password))
     {
         currentMode = Mode::STATION;
 
         Serial.println();
         Serial.println("WiFi connected");
-        Serial.printf("SSID: %s\n", creds.ssid.c_str());
+        Serial.printf("SSID: %s\n", savedCreds.ssid.c_str());
         Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
     }
     else
     {
-        if (creds.valid)
+        if (savedCreds.valid)
         {
             Serial.println(
                 "Failed to connect to saved WiFi network"
@@ -128,6 +167,7 @@ void begin()
         scanNetworks();
 
         startAccessPoint();
+        lastRetryMs = millis();
     }
 
     if (MDNS.begin(currentHostname.c_str()))
@@ -138,6 +178,36 @@ void begin()
     else
     {
         Serial.println("mDNS responder failed to start");
+    }
+}
+
+
+void loop()
+{
+    uint32_t now = millis();
+
+    if (currentMode == Mode::STATION)
+    {
+        if (now - lastMdnsRefreshMs >= MDNS_REFRESH_INTERVAL_MS)
+        {
+            lastMdnsRefreshMs = now;
+            refreshMdns();
+        }
+        return;
+    }
+
+    if (!savedCreds.valid)
+        return;
+
+    if (retrying)
+    {
+        bool connected = WiFi.status() == WL_CONNECTED;
+        if (connected || now - lastRetryMs >= STA_CONNECT_TIMEOUT_MS)
+            finishStationRetry(connected);
+    }
+    else if (now - lastRetryMs >= STA_RETRY_INTERVAL_MS)
+    {
+        startStationRetry();
     }
 }
 

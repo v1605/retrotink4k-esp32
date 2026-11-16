@@ -5,7 +5,7 @@
 #include <algorithm>
 
 #include "../rt4k/link.h"
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 
 // rb_sched: link ownership, transactions, wake, lease timers, parked requests.
 

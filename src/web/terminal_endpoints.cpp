@@ -10,7 +10,7 @@
 #include "ws_channel.h"
 #include "../bridge/retro_bridge.h"
 #include "../rt4k/link.h"
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 
 namespace
 {
@@ -66,6 +66,7 @@ namespace
         // Parse first so feed() keeps up; skip the slower broadcast under a
         // backlog.
         std::vector<uint8_t> textBytes;
+        textBytes.reserve(length);
         Rt4kLink::feed(data, length, &textBytes);
 
         if (!textBytes.empty() && SerialBridge::pendingBytes() < BROADCAST_BACKLOG_THRESHOLD)

@@ -220,6 +220,9 @@ namespace
         if (gzipped)
             httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
 
+        httpd_resp_set_hdr(req, "Cache-Control",
+            path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache");
+
         std::unique_ptr<char[]> chunk(new char[STATIC_CHUNK_BYTES]);
         for (;;)
         {

@@ -4,7 +4,7 @@
 #include <WiFi.h>
 #include <esp_mac.h>
 
-#include "../serial_bridge.h"
+#include "../ftdi/serial_bridge.h"
 #include "../rt4k/link.h"
 #include "../web/web_server.h"
 #include "../wifi_manager.h"

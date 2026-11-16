@@ -16,6 +16,7 @@ namespace
     constexpr uint32_t RESTART_AFTER_MS = 180000;
 
     esp_ping_handle_t session = nullptr;
+    IPAddress pingedGateway;
     std::atomic<uint32_t> lastReplyMs{0};
     std::atomic<bool> armed{false};
     uint32_t lastReconnectMs = 0;
@@ -49,7 +50,17 @@ namespace
         }
 
         esp_ping_start(session);
+        pingedGateway = gateway;
         Serial.printf("Network watchdog: pinging gateway %s\n", gateway.toString().c_str());
+    }
+
+
+    void stopPing()
+    {
+        esp_ping_stop(session);
+        esp_ping_delete_session(session);
+        session = nullptr;
+        armed = false;
     }
 }
 
@@ -66,6 +77,14 @@ void loop()
     {
         if (WiFi.isConnected())
             startPing();
+        return;
+    }
+
+    // A reconnect can land on another network; ping the gateway it has now.
+    if (WiFi.isConnected() && WiFi.gatewayIP() != pingedGateway)
+    {
+        Serial.println("Network watchdog: gateway changed, restarting ping");
+        stopPing();
         return;
     }
 
